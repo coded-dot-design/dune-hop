@@ -1,0 +1,74 @@
+/* Dune Hop: the stage inside the game's shadow root (a Board UI root, .bui). The race draws on the
+   canvas; over it a transparent key takes the pointer (hold for gas, drag to steer) and the keyboard's
+   focus. Board UI stickers: position, lap, clock, stunt score and nitro on top; the standings and the
+   keys on the right; calls in the middle; the track menu, pause and results cards. The touch keys are
+   @fzlt/core/pad, on touch screens only; on a tall stage (a phone held upright) the course sits on top
+   and the pad under it. */
+.dh{position:absolute;inset:0;overflow:hidden;container:stage/size;background:var(--dh-bg,#0d0b1c);color:var(--ink);font:900 clamp(11px,1.45cqw,15px)/1.15 ui-rounded,"SF Pro Rounded",Nunito,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.dh[data-day]{--dh-bg:#9c5f45}
+.dh canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.dh .dh-play{position:absolute;left:0;top:0;width:100%;height:100%;border:0;margin:0;padding:0;background:transparent;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;outline-offset:-4px;font:inherit;color:transparent}
+.dh .dh-hud{position:absolute;inset:0;pointer-events:none}
+.dh .dh-head{position:absolute;left:10px;top:10px;right:calc(var(--dh-right,200px) + 16px);display:flex;flex-wrap:wrap;gap:7px 8px;align-items:flex-start}
+.dh .dh-chip{display:inline-flex;align-items:center;gap:.45em;padding:.42em .7em;background:var(--surface);color:var(--ink);border:2px solid var(--rim);border-radius:9px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);white-space:nowrap;font-variant-numeric:tabular-nums}
+.dh .dh-chip small{font-size:.72em;color:var(--muted);letter-spacing:.04em}
+.dh .dh-pos{font-size:1.75em;padding:.12em .5em;background:var(--k-attack);color:var(--rim);rotate:-2deg}
+.dh .dh-pos small{color:var(--rim);opacity:.75}
+.dh .dh-lap{rotate:1deg}
+.dh .dh-time span{min-width:5.4ch}
+.dh .dh-score i{font-style:normal;padding:.05em .4em;border:2px solid var(--rim);border-radius:6px;background:var(--surface)}
+.dh .dh-score i.dh-hot{background:var(--k-sys);color:var(--rim)}
+.dh .dh-nitro b{position:relative;display:block;width:6.5em;height:.8em;border:2px solid var(--rim);border-radius:5px;background:var(--raised);overflow:hidden}
+.dh .dh-nitro b i{position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--n,0));background:var(--k-sys)}
+.dh .dh-nitro.dh-on b i{background:var(--k-attack)}
+.dh .dh-hint{position:absolute;left:12px;bottom:12px;max-width:60%;margin:0;font-size:.92em;color:#f4efff;text-shadow:0 1px 0 #0d0b1c,0 0 4px #0d0b1c}
+.dh[data-day] .dh-hint{color:#1b1420;text-shadow:0 1px 0 #ffd29a,0 0 4px #ffd29a}
+.dh .dh-keys{position:absolute;right:10px;top:10px;display:flex;gap:6px;margin:0}
+.dh .dh-key{min-width:44px;height:44px;padding:0 .75em;font:inherit;font-size:.95em;cursor:pointer;pointer-events:auto;background:var(--surface);color:var(--ink);border:2px solid var(--rim);border-radius:22px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000)}
+.dh .dh-key:active{translate:2px 2px;box-shadow:none}
+.dh .dh-key[aria-pressed="false"]{color:var(--muted)}
+.dh .dh-board{position:absolute;right:10px;top:64px;width:var(--dh-right,200px);margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.dh .dh-board li{display:grid;grid-template-columns:1.6em .8em 1fr auto;align-items:center;gap:.45em;padding:.3em .55em;background:var(--surface);border:2px solid var(--rim);border-radius:8px;font-size:.92em;font-variant-numeric:tabular-nums;box-shadow:calc(2px * var(--bui-sx,1)) calc(2px * var(--bui-sy,1)) 0 var(--bui-shadow,#000)}
+.dh .dh-board li.dh-you{background:var(--k-sys);color:var(--rim)}
+.dh .dh-board li i{width:.8em;height:.8em;border-radius:3px;border:2px solid var(--rim)}
+.dh .dh-board li em{font-style:normal;font-size:.85em;opacity:.8}
+.dh .dh-toast{position:absolute;left:50%;top:30%;translate:-50% 0;rotate:-2deg;margin:0;padding:.45em .85em;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--rim);color:#f6f3ff;border:2px solid var(--rim);border-radius:9px;box-shadow:calc(4px * var(--bui-sx,1)) calc(4px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);font-size:1.15em;letter-spacing:.03em}
+.dh .dh-toast.dh-clean{background:#22e6ff;color:#0b0a14}
+.dh .dh-toast.dh-go{background:var(--k-go);color:var(--rim)}
+.dh .dh-toast.dh-meh{background:#ffd166;color:#0b0a14}
+.dh .dh-toast.dh-bad{background:#ff4f5e;color:#0b0a14;rotate:2deg}
+.dh .dh-toast.dh-boost{background:#ff4fa8;color:#0b0a14}
+.dh .dh-count{position:absolute;left:50%;top:38%;translate:-50% -50%;margin:0;padding:.1em .45em;font-size:clamp(48px,9cqw,110px);line-height:1;background:var(--surface);color:var(--ink);border:3px solid var(--rim);border-radius:18px;box-shadow:calc(6px * var(--bui-sx,1)) calc(6px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);rotate:-3deg}
+.dh .dh-count.dh-go{background:var(--k-go);color:var(--rim)}
+.dh .dh-demo{position:absolute;left:50%;bottom:16px;translate:-50% 0;margin:0;padding:.5em .9em;background:var(--k-go);color:var(--rim);border:2px solid var(--rim);border-radius:22px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);letter-spacing:.05em;white-space:nowrap}
+.dh .dh-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0}
+.dh .dh-card{position:absolute;left:50%;top:50%;translate:-50% -50%;display:grid;justify-items:center;gap:.55em;width:min(92%,34em);max-height:calc(100% - 24px);overflow:auto;padding:1em 1.2em 1.1em;background:var(--surface);color:var(--ink);border:2.5px solid var(--rim);border-radius:14px;box-shadow:calc(6px * var(--bui-sx,1)) calc(6px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);text-align:center;pointer-events:auto;overscroll-behavior:contain}
+.dh .dh-card>b{font-size:1.9em;letter-spacing:.06em}
+.dh .dh-card p{margin:0}
+.dh .dh-card .dh-sub{color:var(--muted);font-size:.95em;line-height:1.35}
+.dh .dh-card .dh-big{font-size:1.5em;font-variant-numeric:tabular-nums}
+.dh .dh-row{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.dh .dh-row .bui-key{min-height:44px;padding:0 1.1em;font:inherit}
+.dh .dh-again{background:var(--k-go);color:var(--rim)}
+.dh .dh-tracks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%;margin:0;padding:0;list-style:none}
+.dh .dh-tracks button{position:relative;display:grid;gap:.25em;width:100%;min-height:44px;padding:.65em .75em .7em;text-align:left;font:inherit;cursor:pointer;background:var(--raised);color:var(--ink);border:2px solid var(--rim);border-radius:10px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000)}
+.dh .dh-tracks button:focus-visible{outline:3px solid var(--k-sys);outline-offset:2px}
+.dh .dh-tracks button[aria-current]{background:var(--k-sys);color:var(--rim)}
+.dh .dh-tracks button[aria-current] small{color:var(--rim)}
+.dh .dh-tracks b{font-size:1.15em;letter-spacing:.02em}
+.dh .dh-tracks small{font-size:.8em;color:var(--muted);font-weight:700;line-height:1.3}
+.dh .dh-tracks span{display:flex;justify-content:space-between;gap:.5em;font-size:.85em;font-variant-numeric:tabular-nums}
+.dh .dh-tier{letter-spacing:.12em}
+.dh .dh-results{width:100%;margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.dh .dh-results li{display:grid;grid-template-columns:2.2em .9em 1fr auto;align-items:center;gap:.5em;padding:.35em .6em;border:2px solid var(--rim);border-radius:8px;background:var(--raised);font-variant-numeric:tabular-nums;text-align:left}
+.dh .dh-results li.dh-you{background:var(--k-sys);color:var(--rim)}
+.dh .dh-results li i{width:.9em;height:.9em;border-radius:3px;border:2px solid var(--rim)}
+.dh .dh-hidden,.dh [hidden]{display:none!important}
+.dh .dh-pad{--u:.78px;display:none}
+.dh .dh-pad .bui-pad-keys{max-width:none;flex-wrap:nowrap}
+@media (pointer:coarse){.dh .dh-pad{display:flex}.dh .dh-hint{display:none}}
+@container stage (max-width:760px){.dh .dh-hud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
+@media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(104px,22cqh,132px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(104px,22cqh,132px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(104px,22cqh,132px) + 14px)}}}
+@container stage (max-width:520px){.dh .dh-tracks{grid-template-columns:1fr}.dh .dh-card{padding:.8em .8em .9em}.dh .dh-card>b{font-size:1.5em}}
+@media (prefers-reduced-motion:reduce){.dh .dh-toast,.dh .dh-count,.dh .dh-pos{rotate:0deg}}
+.dh[data-demo] .dh-pad{display:none!important}.dh[data-demo] canvas,.dh[data-demo] .dh-play{height:100%!important}

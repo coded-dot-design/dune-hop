@@ -1,0 +1,16 @@
+{
+  "id": "dune-hop",
+  "author": "Chris Cooley",
+  "license": "MIT",
+  "name": "Dune Hop",
+  "kind": "DOM RACE + DRIVE",
+  "tagline": "Fly the dunes.",
+  "description": "An off-road racer on a tabletop: four tracks of rising size, three rivals, jumps scored for airtime and clean landings, boost pads and nitro. Neon at night, a hot sunset by day.",
+  "accent": "pink",
+  "icon": "bug",
+  "controls": [
+    "Arrows / WASD — gas, brake, steer",
+    "Space — nitro",
+    "P — pause · V — camera · T — tracks"
+  ]
+}

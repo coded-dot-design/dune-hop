@@ -1,0 +1,21 @@
+---
+// Dune Hop, the game: the stage fills the screen under the header. ?track=<id> races that track at once.
+import Base from '../../layouts/Base.astro';
+const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks, three rivals, jumps, boost pads and nitro.';
+---
+<Base title="Play Dune Hop" description={description} page="play" app>
+  <section class="play-stage" aria-labelledby="play-title">
+    <h1 id="play-title" class="sr">Play Dune Hop</h1>
+    <div id="game" class="play-host"></div>
+  </section>
+</Base>
+
+<script>
+  import { createDuneHop, TRACKS } from "../../../../dist/dune-hop.mjs";
+  const host = document.getElementById("game")!;
+  const want = new URLSearchParams(location.search).get("track");
+  const track = TRACKS.some((t: { id: string }) => t.id === want) ? want! : undefined;
+  const game = createDuneHop({ host, keyboard: "page", track });
+  if (track) game.start(track);
+  (window as unknown as { game: unknown }).game = game;
+</script>
