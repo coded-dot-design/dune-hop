@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Long-travel suspension, like a desert buggy or a trophy truck: each wheel rides its own soft,
   progressive spring with 0.55 of travel (was 0.3) and more rebound than compression damping, on a
