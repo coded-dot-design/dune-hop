@@ -120,7 +120,9 @@ try {
         const s = await snap(p), fx = Math.cos(s.player.angle), fz = -Math.sin(s.player.angle), ux = s.aim.x - s.player.x, uz = s.aim.y - s.player.y, ul = Math.hypot(ux, uz) || 1;
         const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul, steer = dot < 0 ? Math.sign(cross) : Math.max(-1, Math.min(1, cross * 3));
         // Drift into the bends (the aim off to one side), let it go on the straights.
-        const bend = Math.abs(cross) > 0.25 && s.speed > 4;
+        // (Once a drift has banked, the stick alone takes it on to the gate: the check is one drift
+        // through one bend, not a drift-only lap, which a slow runner's coarse steering can stall.)
+        const bend = Math.abs(cross) > 0.25 && s.speed > 4 && s.cars[0].driftTotal <= dt0;
         await t("touchMove", bend ? [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3], [dk.x, dk.y, 4]] : [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3]]);
         if (bend && s.cars[0].drift === 1 && s.cars[0].gas > 0.5) both = true;
       }
