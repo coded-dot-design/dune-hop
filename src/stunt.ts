@@ -41,6 +41,11 @@ export function stunt(o: StuntOptions = {}) {
       else S[CB] = 0;
       return S[KIND]!;
     },
+    /** Points from elsewhere (a banked drift): onto the score as they are; the combo stands. */
+    add(pts: number) {
+      S[SC] = S[SC]! + pts;
+      S[PTS] = pts;
+    },
     /** It went wrong: the jump scores nothing and the combo is lost. */
     crash() {
       S[CB] = 0;

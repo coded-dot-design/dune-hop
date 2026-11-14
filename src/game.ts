@@ -6,7 +6,7 @@
 // mounted in a shadow root so the page and the game never touch each other's styles.
 // Bricks: the kernel (fixed step, settle, the ledger: every page write goes back on Recall),
 // @fzlt/core/diorama, terrain, drive (and its `chase` camera), input, pad, sound, ui.
-// Keys: ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Space nitro, P pause, V view,
+// Keys: ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro, P pause, V view,
 // M mute, R restart, T tracks; Escape pauses (or, dropped onto a page, gives the page back).
 // Pointer: hold the course for gas, drag to steer. Phones: the pad.
 import { createEngine, seeded } from "@fzlt/core/kernel";
@@ -17,11 +17,11 @@ import { controls } from "@fzlt/core/input";
 import { pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
 import { mount as buiMount } from "@fzlt/core/ui";
-import { createRace, CARS, COUNT, RUN, DONE, CRASH, FIN, RIVALS, PH, NEXT, LAP, PLACE, BEST, LAPT, BOOST, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, type Race } from "./race.ts";
+import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, DTOTAL, SPIN, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
 
-const TAU = 6.283185307179586, K = 24;
+const TAU = 6.283185307179586;
 
 // ---- palettes by role: night (dark), a hot sunset (light), and the city at night ----
 const DARK = {
@@ -32,7 +32,7 @@ const DARK = {
   chassis: "#1d1c28", cage: "#b9bdd8", tyre: "#111118", hub: "#8d92b4", helmet: "#ff4fa8", visor: "#0a0c16", lamp: "#fff7d6", tail: "#ff2e88",
   gNext: "#ff4fa8", gDone: "#22e6ff", gIdle: "#5a4a9c", gPost: "#2b2546", check: "#f4f1ff", ink: "#0b0a14",
   dust: "#8a78c8", spark: "#ffd166", shadow: "#000000", tower: "#120f26", win: "#22e6ff", win2: "#ff4fa8", win3: "#ffd166",
-  cars: [["#eef0ff", "#22e6ff"], ["#d6ff3e", "#1d1c28"], ["#ff4fa8", "#ffd166"], ["#ff8a1f", "#22e6ff"]],
+  cars: [["#eef0ff", "#22e6ff"], ["#d6ff3e", "#1d1c28"], ["#ff4fa8", "#ffd166"], ["#ff8a1f", "#22e6ff"], ["#9b7bff", "#d6ff3e"], ["#22e6ff", "#ff4fa8"]],
 };
 type Pal = typeof DARK;
 const LIGHT: Pal = {
@@ -43,7 +43,7 @@ const LIGHT: Pal = {
   chassis: "#2a2a33", cage: "#2f3d50", tyre: "#1a1a20", hub: "#d9dbe6", helmet: "#ff5a3c", visor: "#11131c", tail: "#ff3b30",
   gNext: "#ff3d7f", gDone: "#13a9bb", gIdle: "#c79a82", gPost: "#5e3d36", check: "#fffaf0", ink: "#1b1420",
   dust: "#f7d6ae", spark: "#fff1a8", shadow: "#5a2a24",
-  cars: [["#1c2a3c", "#14d8e8"], ["#c6f02a", "#1c2a3c"], ["#ff3d7f", "#fff1a8"], ["#ff7a1a", "#1c2a3c"]],
+  cars: [["#1c2a3c", "#14d8e8"], ["#c6f02a", "#1c2a3c"], ["#ff3d7f", "#fff1a8"], ["#ff7a1a", "#1c2a3c"], ["#7a4cff", "#fff1a8"], ["#14d8e8", "#ff3d7f"]],
 };
 const CITY: Pal = {
   ...DARK, city: true, amb: 0.44,
@@ -51,7 +51,6 @@ const CITY: Pal = {
   sand: ["#1b1838", "#231f4a", "#2c2659"], crest: "#3a3170", steep: "#141127", track: "#100d22", lines: ["#2f6dd0", "#22b8e6", "#ff4fa8"], lineA: [0.5, 0.65, 0.9],
   plinth: "#0f0c22", table: "#07060f",
 };
-const NAMES = ["YOU", ...RIVALS.map((r) => r.name)];
 // FX pools: dust, sparks; the tail-light trails, per car.
 const DUST = 140, SPARK = 64, TRAIL = 30;
 
@@ -121,42 +120,60 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const play = document.createElement("button");
   play.type = "button";
   play.className = "dh-play";
-  play.setAttribute("aria-label", "Dune Hop: up or W for gas, down or S to brake, left and right to steer, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T picks a track");
+  play.setAttribute("aria-label", "Dune Hop: up or W for gas, down or S to brake, left and right to steer, Shift to drift, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T picks a track");
   const hud = document.createElement("div");
   hud.className = "dh-hud";
   hud.innerHTML =
-    `<div class="dh-head" data-hud><b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b></div>` +
+    `<div class="dh-head" data-hud><b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b><b class="dh-chip dh-drift" hidden><small>DRIFT</small><span>0</span></b></div>` +
     `<ol class="dh-board" aria-label="Standings"></ol>` +
     `<p class="dh-keys"><button type="button" class="dh-key dh-k-tracks" aria-label="Tracks (T)">TRACKS</button><button type="button" class="dh-key dh-k-view" aria-label="Camera view (V)">VIEW</button><button type="button" class="dh-key dh-k-mute" aria-label="Sound (M)" aria-pressed="true">♪</button><button type="button" class="dh-key dh-k-pause" aria-label="Pause (P)">❚❚</button></p>` +
     `<p class="dh-hint"></p><p class="dh-toast" hidden></p><p class="dh-count" hidden></p><p class="dh-demo" hidden>DEMO LAP · TAP TO DRIVE</p><p class="dh-live" aria-live="polite"></p>` +
-    `<div class="dh-card dh-menu" role="dialog" aria-label="Pick a track" hidden><b>DUNE HOP</b><p class="dh-sub">Pick a track. Three rivals, the clock, and every jump scored.</p><ul class="dh-tracks"></ul><p class="dh-sub dh-menu-keys"></p></div>` +
-    `<div class="dh-card dh-pausec" role="dialog" aria-label="Paused" hidden><b>PAUSED</b><p class="dh-sub dh-p-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-resume">RESUME</button><button type="button" class="bui-key dh-restart">RESTART</button><button type="button" class="bui-key dh-totracks">TRACKS</button></p></div>` +
+    `<div class="dh-card dh-menu" role="dialog" aria-label="Pick a track" hidden><b>DUNE HOP</b><p class="dh-sub">Pick a track, then START. Three rivals, the clock, every jump and drift scored.</p><ul class="dh-tracks"></ul><p class="dh-row"><button type="button" class="bui-key dh-again dh-start">START</button></p><p class="dh-sub dh-menu-keys"></p></div>` +
+    `<div class="dh-card dh-pausec" role="dialog" aria-label="Paused" hidden><b>PAUSED</b><p class="dh-sub dh-p-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-resume">RESUME</button><button type="button" class="bui-key dh-restart">RESTART</button><button type="button" class="bui-key dh-totracks">TRACKS</button></p><p class="dh-row dh-touch"><small class="dh-sub">STEERING</small><button type="button" class="bui-key dh-padk"></button></p></div>` +
     `<div class="dh-card dh-result" role="dialog" aria-label="Race result" hidden><b class="dh-r-head">RESULT</b><p class="dh-big dh-r-time"></p><p class="dh-sub dh-r-stats"></p><ol class="dh-results"></ol><p class="dh-row"><button type="button" class="bui-key dh-again dh-r-again">RACE AGAIN</button><button type="button" class="bui-key dh-r-next">NEXT TRACK</button><button type="button" class="bui-key dh-r-tracks">TRACKS</button></p></div>`;
   stage.append(canvas, play, hud);
   const $ = <T extends HTMLElement = HTMLElement>(s: string) => hud.querySelector(s) as T;
   const posEl = $(".dh-pos span"), lapEl = $(".dh-lap span"), timeEl = $(".dh-time span"), bestEl = $(".dh-time small"), scoreEl = $(".dh-score span"), comboEl = $(".dh-score i");
-  const nitroEl = $(".dh-nitro"), nitroBar = $(".dh-nitro b i"), board = $(".dh-board"), hintEl = $(".dh-hint"), toastEl = $(".dh-toast"), countEl = $(".dh-count"), demoEl = $(".dh-demo"), live = $(".dh-live");
+  const driftEl = $(".dh-drift"), driftN = $(".dh-drift span"), nitroEl = $(".dh-nitro"), nitroBar = $(".dh-nitro b i"), board = $(".dh-board"), hintEl = $(".dh-hint"), toastEl = $(".dh-toast"), countEl = $(".dh-count"), demoEl = $(".dh-demo"), live = $(".dh-live");
   const keysEl = $(".dh-keys"), menu = $(".dh-menu"), tracksEl = $(".dh-tracks"), pauseC = $(".dh-pausec"), result = $(".dh-result"), headEl = $(".dh-head");
   const muteK = $<HTMLButtonElement>(".dh-k-mute"), viewK = $<HTMLButtonElement>(".dh-k-view");
-  for (let c = 0; c < CARS; c++) board.insertAdjacentHTML("beforeend", `<li><b></b><i></i><span></span><em></em></li>`);
+  for (let c = 0; c < MAX_CARS; c++) board.insertAdjacentHTML("beforeend", `<li><b></b><i></i><span></span><em></em></li>`);
   const rows = [...board.children] as HTMLElement[];
 
   const snd = sound(engine, { cues: { count: "click", go: "ready", gate: "click", lap: "power", clean: "power", sketchy: "click", crash: "boom", respawn: "ready", boost: "power", bump: "hit", win: "win", lose: "end" }, volume: 0.1, on: o.sound !== false });
   const paintMute = () => (muteK.textContent = snd.on ? "♪" : "×", muteK.setAttribute("aria-pressed", "" + snd.on));
   paintMute();
-  const c = controls(engine, { keys: { left: [], right: [], gas: [], brake: [], nitro: [] }, target: play });
-  const GAS = c.id("gas"), BRAKE = c.id("brake"), NITRO = c.id("nitro");
+  const c = controls(engine, { keys: { left: [], right: [], gas: [], brake: [], nitro: [], drift: [] }, target: play });
+  const GAS = c.id("gas"), BRAKE = c.id("brake"), NITRO = c.id("nitro"), DRIFT = c.id("drift");
+  // Touch: two layouts for the left thumb, picked on the pause card and remembered on the device:
+  // "steer", a left/right pad (steer only), or "stick", the analog stick. GAS, BRAKE, DRIFT and BOOST
+  // sit under the right thumb either way.
+  const padKind = () => (store.get("pad") === "stick" ? "stick" : "buttons");
   const thePad = pad(engine, c, {
-    scheme: "buttons",
+    scheme: padKind(),
     move: ["", "", "left", "right"],
     actions: [
       { intent: "gas", label: "GAS", name: "Gas (up arrow)", key: "↑", role: "go", hold: true },
       { intent: "brake", label: "BRAKE", name: "Brake (down arrow)", key: "↓", role: "attack", hold: true },
-      { intent: "nitro", label: "NITRO", name: "Nitro (space)", key: "␣", role: "sys", hold: true },
+      { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "aim", hold: true },
+      { intent: "nitro", label: "BOOST", name: "Nitro boost (space)", key: "␣", role: "sys", hold: true },
     ],
     host: stage,
   });
   thePad.el.classList.add("dh-pad");
+  const padK = () => hud.querySelector(".dh-padk") as HTMLButtonElement;
+  function paintPad() {
+    const stick = thePad.scheme === "stick";
+    stage.toggleAttribute("data-stick", stick);
+    const k = padK();
+    if (k) (k.textContent = stick ? "STICK" : "◀ ▶ PAD"), k.setAttribute("aria-label", `Touch steering: ${stick ? "the stick" : "the left and right pad"} (tap to switch)`);
+  }
+  function swapPad() {
+    thePad.setScheme(thePad.scheme === "stick" ? "buttons" : "stick");
+    store.set("pad", thePad.scheme === "stick" ? "stick" : "steer");
+    c.press("left", false), c.press("right", false);
+    paintPad();
+  }
 
   // ---- the race and the diorama ----
   let def = trackById(o.track ?? TRACKS[0]!.id), race: Race = createRace(def, o.seed ?? 1);
@@ -169,7 +186,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const cars: DioramaObject[] = [], hubs: DioramaObject[][] = [], tails: DioramaObject[][] = [], gates: DioramaObject[][] = [];
   const DV = new Float64Array(DUST * 5), SV = new Float64Array(SPARK * 5);
   // Trails: per car, the last TRAIL positions of each tail light (a ring), its head and length.
-  const TR = new Float64Array(CARS * TRAIL * 6), TRN = new Int32Array(CARS * 2);
+  const TR = new Float64Array(MAX_CARS * TRAIL * 6), TRN = new Int32Array(MAX_CARS * 2);
   let EDGES: Float64Array[] = [], LINES: Float32Array[] = [], MAP: Float64Array[] = [];
   const rnd = seeded(20261109);
   const STARS = new Float32Array(120);
@@ -228,7 +245,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     dio.add({ id: "rim", size: [HX * 2 + 0.7, 0.12, HZ * 2 + 0.7], pos: [0, -0.2, 0], color: P.rim, cluster: "table", layer: 2, emissive: true, pick: false });
     tv = terrainView(dio, t, {
       bands: [[0.55, P.sand[0]!], [1.15, P.sand[1]!], [1.85, P.sand[2]!], [99, P.crest]], steep: 0.42, steepColor: P.steep, kinds: [P.track],
-      light: P.light, ambient: P.amb, lod: [18, 36], shadows: CARS, shadowColor: P.shadow,
+      light: P.light, ambient: P.amb, lod: [18, 36], shadows: MAX_CARS, shadowColor: P.shadow,
     });
     dio.decal("terrain", 1, paintLines);
     // The city: towers behind the far edge and down the left, their windows lit in neon bands.
@@ -276,10 +293,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       if (!g) for (let k = 0; k < 8; k++) dio.add({ size: [0.32, 0.16, w / 8], pos: [0, 2.5 + (k & 1 ? 0 : 0.16), -w / 2 + (k + 0.5) * (w / 8)], on: id, color: k & 1 ? P.ink : P.check, pick: false, layer: 9 });
       dio.decal(id, 20, (ctx) => glow(ctx, g));
     }
-    for (let k = 0; k < CARS; k++) buildCar(k);
+    for (let k = 0; k < race.count; k++) buildCar(k);
     dust = dio.points({ cap: DUST, color: P.dust, layer: 4 });
     spark = dio.points({ cap: SPARK, color: P.spark, layer: 6 });
-    for (let k = 0; k < CARS; k++) dio.decal("car" + k, 4, (ctx) => paintTrail(ctx, k));
+    for (let k = 0; k < race.count; k++) dio.decal("car" + k, 4, (ctx) => paintTrail(ctx, k));
     EDGES = race.tr.paths.map(trackEdges);
     LINES = contours([0.95, 1.5, 2.1]);
     sky = null;
@@ -292,15 +309,19 @@ export function createDuneHop(o: DuneHopOptions = {}) {
    *  wing; the driver's helmet; four knobbly wheels on dished hubs. Its colours: body and accent. */
   function buildCar(k: number) {
     const id = "car" + k, [body, acc] = P.cars[k]!;
-    cars.push(dio.add({ id, shape: "group", size: [2.0, 0, 1.3], tag: { car: k } }));
+    cars.push(dio.add({ id, shape: "group", size: [2.0, 0, 1.6], tag: { car: k } }));
     const part = (size: number[], pos: number[], color: string, op: { shape?: "box" | "wedge" | "cyl"; emissive?: boolean; sides?: number; top?: number; rot?: number[] } = {}) =>
       dio.add({ shape: op.shape || "box", size, pos, rot: op.rot, on: id, color, emissive: op.emissive, sides: op.sides, top: op.top, pick: false });
     part([1.92, 0.14, 0.86], [0, -0.26, 0], P.chassis);
     part([1.04, 0.28, 0.66], [-0.16, -0.12, 0], body!);
-    for (const z of [-0.42, 0.42]) part([1.14, 0.22, 0.2], [-0.06, -0.12, z], body!);
-    for (const z of [-0.42, 0.42]) part([1.0, 0.06, 0.22], [-0.06, 0.1, z], acc!);
-    part([0.7, 0.24, 0.84], [0.76, -0.12, 0], body!, { shape: "wedge" });
-    part([0.34, 0.05, 0.96], [1.04, -0.28, 0], acc!);
+    // Side pods end ahead of the rear wheels and well behind the front ones; the nose and splitter
+    // stay narrower than the front wheels' inner faces at full lock (no tyre ever cuts the body).
+    for (const z of [-0.42, 0.42]) part([0.98, 0.22, 0.2], [-0.2, -0.12, z], body!);
+    for (const z of [-0.42, 0.42]) part([0.86, 0.06, 0.22], [-0.2, 0.1, z], acc!);
+    part([0.7, 0.24, 0.7], [0.76, -0.12, 0], body!, { shape: "wedge" });
+    part([0.3, 0.05, 0.78], [1.04, -0.28, 0], acc!);
+    // Suspension arms out to each wheel.
+    for (const x of [0.8, -0.74]) for (const z of [-0.53, 0.53]) part([0.09, 0.05, x > 0 ? 0.2 : 0.26], [x, -0.27, z], P.cage);
     part([1.6, 0.04, 0.16], [0.02, 0.17, 0], acc!);
     part([0.44, 0.32, 0.6], [-0.86, -0.08, 0], P.chassis);
     for (const z of [-0.17, 0.17]) part([0.1, 0.28, 0.1], [-1.02, -0.02, z], P.hub, { shape: "cyl", sides: 6 });
@@ -328,7 +349,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
 
   // ---- state ----
-  const I = new Float64Array(4), tmp = new Float64Array(3), tmp2 = new Float64Array(3);
+  const I = new Float64Array(IK), tmp = new Float64Array(3), tmp2 = new Float64Array(3);
   // Pointer drive: down, start x, current x, id.
   const PD = new Float64Array(4);
   PD[3] = -1;
@@ -348,7 +369,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
 
   function pose() {
     const t = race.t, tr = race.tr;
-    for (let k = 0; k < CARS; k++) {
+    for (let k = 0; k < race.count; k++) {
       const car = cars[k]!, v = race.cars[k]!, p = k * 3, tum = race.C[k * K + PH] === CRASH;
       car.pos[0] = race.pos[p]!; car.pos[1] = race.pos[p + 1]!; car.pos[2] = race.pos[p + 2]!;
       car.rot[0] = race.rot[p]!; car.rot[1] = race.rot[p + 1]!; car.rot[2] = race.rot[p + 2]!;
@@ -358,7 +379,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         h.pos[0] = v.wheels[i * 2]!;
         h.pos[1] = tum ? -0.2 : -(v.rest - v.comp[i]!);
         h.pos[2] = v.wheels[i * 2 + 1]!;
-        h.rot[1] = i < 2 && !tum ? -v.steerAngle : 0;
+        h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, v.steerAngle)) : 0;
         h.rot[2] = -v.spin[i]!;
       }
       const x = car.pos[0]!, z = car.pos[2]!, inside = Math.abs(x) < tr.HX && Math.abs(z) < tr.HZ, lift = inside ? car.pos[1]! - t.height(x, z) : 9;
@@ -416,7 +437,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   function stepFx(dt: number) {
     let any = false;
-    for (let k = 0; k < CARS; k++) {
+    for (let k = 0; k < race.count; k++) {
       const v = race.cars[k]!, ph = race.C[k * K + PH]!;
       // Dust from the rear wheels by how hard they dig (fewer for the rivals, and none in reduced motion).
       if (ph !== CRASH && !reduced) {
@@ -487,6 +508,13 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         toast(val ? `BACK AT GATE ${val}` : "BACK AT THE START", "go");
       } else if (type === E_BOOST && you) engine.events.emit("boost"), toast("BOOST", "boost");
       else if (type === E_WRONG && you) toast("WRONG WAY", "bad"), say("Wrong way");
+      else if (type === E_DRIFT && you) engine.events.emit("clean"), toast(`DRIFT +${val}`, "drift"), say(`Drift, ${val} points`);
+      else if (type === E_DRIFT_LOST && you) toast(`DRIFT LOST −${val}`, "meh");
+      else if (type === E_SPIN) {
+        engine.events.emit("bump");
+        burst(race.pos[p]!, race.pos[p + 1]! + 0.3, race.pos[p + 2]!, you ? 14 : 8, 3);
+        if (you) (shake = reduced ? 0 : 0.3), toast("SPUN OUT", "bad"), say("Spun out");
+      }
       else if (type === E_BUMP) engine.events.emit("bump"), (shake = reduced ? 0 : Math.max(shake, 0.18));
       else if (type === E_DONE) {
         if (mode === "demo") continue;
@@ -540,7 +568,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (was[6] !== n) (was[6] = n), nitroBar.style.setProperty("--n", "" + n);
     const on = race.N[1]! > 0 || C[BOOST]! > 0 ? 1 : 0;
     if (was[7] !== on) (was[7] = on), nitroEl.classList.toggle("dh-on", !!on);
-    const hint = mode === "race" && R[0] === COUNT ? (thePad.el.offsetParent ? "Hold GAS · ◀ ▶ steer · NITRO when the bar is full" : "↑ gas · ← → steer · ↓ brake · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it") : "";
+    const dp = Math.round(C[DPTS]!), dOn = C[DTIME]! > 0.15 && dp > 0;
+    if (was[8] !== (dOn ? dp : -1)) (was[8] = dOn ? dp : -1), (driftEl.hidden = !dOn), (driftN.textContent = "" + dp);
+    const hint = mode === "race" && R[0] === COUNT ? (thePad.el.offsetParent ? "Hold GAS · steer left thumb · DRIFT into the bends · BOOST when the bar is full" : "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it") : "";
     if (hintEl.textContent !== hint) hintEl.textContent = hint;
     // The demo lap shows only the race (the page's copy sits over it); the menu only its card.
     const hideHead = mode === "menu" || mode === "demo";
@@ -551,14 +581,16 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (stage.hasAttribute("data-demo") !== (mode === "demo")) stage.toggleAttribute("data-demo", mode === "demo"), (V[0] = 1), engine.wake();
   }
   function boardWrite() {
-    for (let k = 0; k < CARS; k++) {
+    for (let k = race.count; k < rows.length; k++) rows[k]!.hidden = true;
+    for (let k = 0; k < race.count; k++) {
       const car = race.rank[k]!, row = rows[k]!, C = race.C, o = car * K;
+      row.hidden = false;
       const key = car * 100 + Math.min(race.laps, C[o + LAP]! + 1) + (C[o + PH] === FIN ? 50 : 0);
       if (row.dataset.k === "" + key) continue;
       row.dataset.k = "" + key;
       (row.children[0] as HTMLElement).textContent = "" + (k + 1);
       (row.children[1] as HTMLElement).style.background = P.cars[car]![0]!;
-      (row.children[2] as HTMLElement).textContent = NAMES[car]!;
+      (row.children[2] as HTMLElement).textContent = race.name(car);
       (row.children[3] as HTMLElement).textContent = C[o + PH] === FIN ? "FIN" : `L${Math.min(race.laps, C[o + LAP]! + 1)}`;
       row.classList.toggle("dh-you", car === 0);
     }
@@ -569,13 +601,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       const li = document.createElement("li"), b = document.createElement("button"), best = bestOf(d.id);
       b.type = "button";
       b.dataset.track = d.id;
+      b.setAttribute("aria-pressed", "" + (d.id === def.id));
       if (d.id === def.id) b.setAttribute("aria-current", "true");
       b.innerHTML = `<span><b>${i + 1}. ${d.name}</b><em class="dh-tier" aria-label="Level ${d.tier} of 4">${"◆".repeat(d.tier)}${"◇".repeat(4 - d.tier)}</em></span><small>${d.blurb}</small><span><small>${d.laps} LAPS${d.branches ? " · SHORTCUT" : ""}${d.city ? " · NIGHT" : ""}</small><small>${best ? "BEST " + clock(best) : "NO TIME YET"}</small></span>`;
-      b.addEventListener("click", () => startRace(d.id), sig);
+      b.addEventListener("click", () => selectTrack(d.id), sig);
       li.append(b);
       tracksEl.append(li);
     });
-    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "GAS, BRAKE and NITRO on the right, steer on the left." : "↑ gas · ↓ brake · ← → steer · SPACE nitro · P pause · V view";
+    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Steer with the left thumb; GAS, BRAKE, DRIFT and BOOST with the right." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
   }
   function showCard(which: HTMLElement | null) {
     for (const el of [menu, pauseC, result]) el.hidden = el !== which;
@@ -583,7 +616,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   function showEnd() {
     const C = race.C, R = race.R, place = C[PLACE]!, time = R[3]!, id = def.id, prev = bestOf(id);
-    newBest = place <= CARS && (!prev || time < prev) && race.fin[0]! > 0 && race.C[NEXT]! > race.gates * race.laps;
+    newBest = place <= race.count && (!prev || time < prev) && race.fin[0]! > 0 && race.C[NEXT]! > race.gates * race.laps;
     if (newBest) store.set("best:" + id, time.toFixed(2));
     $(".dh-r-head").textContent = place === 1 ? "YOU WIN" : `FINISH · ${ordinal(place).toUpperCase()}`;
     $(".dh-r-time").textContent = clock(time) + (newBest ? " · TRACK BEST" : prev ? ` · best ${clock(prev)}` : "");
@@ -591,9 +624,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     $(".dh-r-stats").textContent = `best lap ${C[BEST]! ? clock(C[BEST]!) : "—"} · ${S[SC]!.toLocaleString("en-US")} stunt pts · best air ${S[SBEST]!.toFixed(2)}s · ${S[CLEANS]} clean · top combo ×${1 + S[TOP]!}`;
     const list = $(".dh-results");
     list.innerHTML = "";
-    for (let k = 0; k < CARS; k++) {
+    for (let k = 0; k < race.count; k++) {
       const car = race.order[k]! >= 0 ? race.order[k]! : race.rank[k]!, li = document.createElement("li"), ft = race.fin[car]!;
-      li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span>${NAMES[car]}</span><span>${ft ? clock(ft) : "RACING"}</span>`;
+      li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span>${race.name(car)}</span><span>${ft ? clock(ft) : "RACING"}</span>`;
       if (!car) li.className = "dh-you";
       list.append(li);
     }
@@ -618,6 +651,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0)) {
     loadTrack(id);
     race.reset(seed);
+    V[0] = 1;
     mode = auto && o.attract ? "demo" : "race";
     paused = false;
     if (mode === "demo") race.R[2] = 0.05;
@@ -639,8 +673,21 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     engine.wake();
     if (!dropIn || mode === "race") play.focus({ preventScroll: true });
   }
+  /** The menu's pick: the preview on the table changes; START races it. */
+  function selectTrack(id: string) {
+    loadTrack(id);
+    for (const b of tracksEl.querySelectorAll<HTMLElement>("button")) {
+      const on = b.dataset.track === def.id;
+      b.setAttribute("aria-pressed", "" + on);
+      on ? b.setAttribute("aria-current", "true") : b.removeAttribute("aria-current");
+    }
+    say(`${def.name} selected`);
+    dirty = true;
+    engine.wake();
+  }
   function showMenu() {
     mode = "menu";
+    V[0] = 1;
     paused = false;
     menuWrite();
     showCard(menu);
@@ -669,7 +716,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (on) ($(".dh-p-sub") as HTMLElement).textContent = `${def.name} · lap ${Math.min(race.laps, race.C[LAP]! + 1)} of ${race.laps} · ${clock(race.R[1]!)}`;
     showCard(on ? pauseC : null);
     PD[0] = 0;
-    c.press("gas", false), c.press("brake", false), c.press("left", false), c.press("right", false), c.press("nitro", false);
+    c.press("gas", false), c.press("brake", false), c.press("left", false), c.press("right", false), c.press("nitro", false), c.press("drift", false);
     if (on) ($(".dh-resume") as HTMLButtonElement).focus({ preventScroll: true });
     else play.focus({ preventScroll: true });
     engine.wake();
@@ -685,8 +732,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     TABLE.dist = 30;
     TABLE.tx = TABLE.ty = TABLE.ox = TABLE.oy = 0;
     TABLE.tz = 0.4;
-    dio.fit(TABLE, pts, { x0: 8, y0: V[2]!, x1: W - 8, y1: H - V[3]! });
-    chaseO.dist = tall ? 16.5 : 13;
+    // On a wide stage the track menu sits on the left: the preview takes the right.
+    const left = mode === "menu" && W > 900 ? Math.min(W * 0.46, 600) : 8;
+    dio.fit(TABLE, pts, { x0: left, y0: V[2]!, x1: W - 8, y1: H - V[3]! });
+    chaseO.dist = tall ? 17.5 : 14;
     chaseO.pitch = tall ? 0.7 : 0.55;
   }
   /** The chase target: your buggy (clamped to the table's edge when it goes over). */
@@ -800,8 +849,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     for (let k = 0; k < tr.PADS.length; k += 2) {
       const p = tr.paths[tr.PADS[k]!]!, i = tr.PADS[k + 1]!, x = p.P[i * 2]!, z = p.P[i * 2 + 1]!, tx = p.T[i * 2]!, tz = p.T[i * 2 + 1]!, y = t.height(x, z) + 0.05;
       if (!dio.project(x, y, z, tmp) || tmp[2]! < 0.5) continue;
-      const L = tr.PAD_LEN / 2, Wd = 1.2;
+      const L = tr.PAD_LEN / 2, Wd = tr.PAD_W;
       ctx.fillStyle = P.pad;
+      ctx.strokeStyle = P.chev;
+      ctx.lineWidth = Math.max(1.5, (f * 0.06) / tmp[2]!);
       ctx.beginPath();
       for (let q = 0; q < 4; q++) {
         const a = q === 0 || q === 3 ? -L : L, w = q < 2 ? -Wd : Wd, px = x + tx * a - tz * w, pz = z + tz * a + tx * w;
@@ -810,17 +861,18 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       }
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = P.chev;
-      ctx.lineWidth = Math.max(1.5, (f * 0.1) / tmp[2]!);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, (f * 0.16) / tmp[2]!);
       ctx.globalAlpha = 0.6 + 0.4 * Math.sin(pulse * 8);
       ctx.beginPath();
+      const cw = Wd * 0.62;
       for (let s = -1; s <= 1; s++) {
-        const cx = x + tx * s * 0.6, cz = z + tz * s * 0.6;
-        dio.project(cx - tx * 0.35 - tz * 0.7, y, cz - tz * 0.35 + tx * 0.7, tmp);
+        const cx = x + tx * s * 0.95, cz = z + tz * s * 0.95;
+        dio.project(cx - tx * 0.5 - tz * cw, y, cz - tz * 0.5 + tx * cw, tmp);
         ctx.moveTo(tmp[0]!, tmp[1]!);
-        dio.project(cx + tx * 0.35, y, cz + tz * 0.35, tmp);
+        dio.project(cx + tx * 0.5, y, cz + tz * 0.5, tmp);
         ctx.lineTo(tmp[0]!, tmp[1]!);
-        dio.project(cx - tx * 0.35 + tz * 0.7, y, cz - tz * 0.35 - tx * 0.7, tmp);
+        dio.project(cx - tx * 0.5 + tz * cw, y, cz - tz * 0.5 - tx * cw, tmp);
         ctx.lineTo(tmp[0]!, tmp[1]!);
       }
       ctx.stroke();
@@ -934,10 +986,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     const R = race.R, tr = race.tr, f = dio.focal();
     // Rival tags over their buggies (chase view, near enough to read).
     if (view)
-      for (let k = 1; k < CARS; k++) {
+      for (let k = 1; k < race.count; k++) {
         const p = k * 3;
         if (!dio.project(race.pos[p]!, race.pos[p + 1]! + 1.3, race.pos[p + 2]!, tmp) || tmp[2]! < 2 || tmp[2]! > 34) continue;
-        sticker(ctx, tmp[0]!, tmp[1]!, NAMES[k]!, P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
+        sticker(ctx, tmp[0]!, tmp[1]!, race.name(k), P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
       }
     // The shortcut's sign where a branch leaves the loop.
     for (let b = 1; b < tr.paths.length; b++) {
@@ -991,7 +1043,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     ctx.beginPath();
     ctx.arc(M0[gi * 2]!, M0[gi * 2 + 1]!, 4, 0, TAU);
     ctx.fill();
-    for (let k = CARS - 1; k >= 0; k--) {
+    for (let k = race.count - 1; k >= 0; k--) {
       const x = x0 + (race.pos[k * 3]! + tr.HX) * s, y = y0 + (race.pos[k * 3 + 2]! + tr.HZ) * s;
       ctx.fillStyle = P.cars[k]![0]!;
       ctx.strokeStyle = P.ink;
@@ -1053,7 +1105,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         I[1] = c.down(BRAKE) ? 1 : 0;
         I[2] = PD[0] ? Math.max(-1, Math.min(1, (PD[2]! - PD[1]!) / Math.max(40, dio.width * 0.1))) : c.axis("left", "right");
         I[3] = c.down(NITRO) ? 1 : 0;
-        moving = race.step(dt, I[0]!, I[1]!, I[2]!, I[3]!, auto);
+        I[4] = c.down(DRIFT) ? 1 : 0;
+        // Car 0's inputs (one person; a second view would fill car 1's from its own keys).
+        for (let k = 0; k < IK; k++) race.IN[k] = I[k]!;
+        race.AUTO[0] = auto ? 1 : 0;
+        moving = race.step(dt);
         if (race.n) events(), (moving = true);
       }
       if (!paused && stepFx(dt)) moving = true;
@@ -1082,7 +1138,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   });
 
   // ---- input ----
-  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", ShiftLeft: "nitro" };
+  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", ShiftLeft: "drift", ShiftRight: "drift" };
   const keyMode = o.keyboard ?? (dropIn ? "page" : "focus");
   const keyHost: EventTarget = keyMode === "page" ? window : stage;
   const mine = (e: Event) => keyMode === "focus" || !(e.target as Element)?.closest?.("input,textarea,select,[contenteditable]");
@@ -1137,6 +1193,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   $(".dh-k-tracks").addEventListener("click", showMenu, sig);
   $(".dh-k-pause").addEventListener("click", () => setPaused(!paused), sig);
   $(".dh-resume").addEventListener("click", () => setPaused(false), sig);
+  $(".dh-padk").addEventListener("click", swapPad, sig);
+  $(".dh-start").addEventListener("click", () => startRace(def.id), sig);
+  paintPad();
   $(".dh-restart").addEventListener("click", () => startRace(def.id), sig);
   $(".dh-totracks").addEventListener("click", showMenu, sig);
   $(".dh-r-again").addEventListener("click", () => startRace(def.id), sig);
