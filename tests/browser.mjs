@@ -122,7 +122,9 @@ try {
         // Drift into the bends (the aim off to one side), let it go on the straights.
         // (Once a drift has banked, the stick alone takes it on to the gate: the check is one drift
         // through one bend, not a drift-only lap, which a slow runner's coarse steering can stall.)
-        const bend = Math.abs(cross) > 0.25 && s.speed > 4 && s.cars[0].driftTotal <= dt0;
+        // DRIFT goes on into a bend and stays on until the slide has scored enough to bank (10+ points,
+        // on state, not on time), unless the car slows right down.
+        const bend = s.cars[0].driftTotal <= dt0 && ((Math.abs(cross) > 0.25 && s.speed > 4) || (held && s.cars[0].driftPts < 15 && s.speed > 3));
         const sx = st.x + steer * st.r * 0.9, sy = st.y - st.r * 0.85;
         // CDP lifts fingers only all at once (a touchEnd), so letting go of DRIFT lifts both thumbs and
         // puts the left one straight back on the stick (a finger left out of a touchMove stays down).
