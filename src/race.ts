@@ -46,7 +46,7 @@ export const SPIN = 24, SPINR = 25, OFFS = 26, DPTS = 27, DTIME = 28, DTOTAL = 2
 /** Inputs per car in IN (IK slots): throttle, brake, steer, nitro, drift. */
 export const IK = 5;
 
-const CAR_OPTS = {
+export const CAR_OPTS = {
   kind: "car" as const, wheels: [0.8, -0.78, 0.8, 0.78, -0.74, -0.76, -0.74, 0.76], radius: 0.36, rest: 0.34, travel: 0.3,
   accel: 9, top: 12, grip: 1.08, drift: 0.2, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
   surfaces: [0.92, 1.08, 1.08],
@@ -57,10 +57,12 @@ export interface RaceOptions {
   humans?: number;
   /** AI rivals after them (default 3). */
   rivals?: number;
+  /** Laps (default the track's). */
+  laps?: number;
 }
 
 export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
-  const tr: Track = buildTrack(def), t = tr.t, main = tr.main, NG = tr.GATE.length, LAPS = def.laps;
+  const tr: Track = buildTrack(def), t = tr.t, main = tr.main, NG = tr.GATE.length, LAPS = Math.max(1, ro.laps || def.laps);
   const HUM = Math.max(1, Math.min(2, ro.humans ?? 1)), NC = Math.min(MAX_CARS, HUM + Math.max(0, ro.rivals ?? 3));
   /** Rival profile of car c (people: none). */
   const rival = (c: number) => RIVALS[(c - HUM) % RIVALS.length]!;
@@ -120,11 +122,13 @@ export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
     for (const s of scs) s.reset();
     hd.reset();
     nev = 0;
-    // The grid: two by two behind the line; the rivals in front, the people at the back.
+    // The grid: two by two behind the line; the rivals in front, the people at the back. Each row sits
+    // on the line where it is (not straight back from the start), so a third row stays on the road
+    // even where the start follows a bend.
     const g0 = main.n - 1, w = TRACK_W * 0.27;
     for (let c = 0; c < NC; c++) {
       const slot = c >= HUM ? c - HUM : NC - HUM + c, o = c * K, s = [3.4 + (slot >> 1) * 3.6, slot & 1 ? w : -w];
-      place(c, g0, s[0]!, s[1]!);
+      place(c, (g0 - Math.round(s[0]! / 0.5) + main.n) % main.n, 0, s[1]!);
       GX[c * 2] = cars[c]!.pos[0]!;
       GX[c * 2 + 1] = cars[c]!.pos[2]!;
       C[o + NEXT] = 1;
@@ -552,7 +556,21 @@ export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
   }
 
   reset(seed);
+  // For the scene: every jump lip [x0, z0, x1, z1] and every boost pad [x, z, tx, tz].
+  const lips: number[] = [], pads: number[] = [], half = TRACK_W / 2 - 0.15;
+  for (let k = 0; k < tr.ramps.length; k += 4) {
+    const p = tr.paths[tr.ramps[k]!]!, i = ((tr.ramps[k + 2]! % p.n) + p.n) % p.n, x = p.P[i * 2]!, z = p.P[i * 2 + 1]!, nx = -p.T[i * 2 + 1]! * half, nz = p.T[i * 2]! * half;
+    lips.push(x - nx, z - nz, x + nx, z + nz);
+  }
+  for (let k = 0; k < tr.PADS.length; k += 2) {
+    const p = tr.paths[tr.PADS[k]!]!, i = tr.PADS[k + 1]!;
+    pads.push(p.P[i * 2]!, p.P[i * 2 + 1]!, p.T[i * 2]!, p.T[i * 2 + 1]!);
+  }
   return {
+    kind: "race" as const,
+    HX: tr.HX, HZ: tr.HZ, LIPS: Float64Array.from(lips), PADV: Float64Array.from(pads), PAD_LEN: tr.PAD_LEN, PAD_W: tr.PAD_W,
+    /** The whole state as bytes (the online desync check hashes it). */
+    bytes: [C, R, pos, rot, N, fin, order, hd.DR, ...DS, ...scs.map((s) => s.S)].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
     def, tr, t, cars, C, R, pos, rot, rank, order, fin, sc, scs, N, ev, IN, AUTO, DR: hd.DR,
     /** Cars in the race, and how many are people (cars 0..humans−1). */
     count: NC,

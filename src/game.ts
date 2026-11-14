@@ -1,27 +1,37 @@
-// Dune Hop, the scene: a race (./race.ts) drawn as a tabletop diorama. A slab of ridged dunes on a
-// plinth: at night the crests glow in neon contour lines over violet sand under a striped sun; by day
-// it is a hot sunset; Neon Edge is always night, at the city's edge, its towers lit. Four buggies, the
-// gates, boost pads with chevrons, the jump lips, light trails and dust. The camera chases your buggy
-// (V: the whole table). Board UI stickers for the HUD and the cards (track select, pause, results),
-// mounted in a shadow root so the page and the game never touch each other's styles.
+// Dune Hop, the scene: a race (./race.ts) or the Freestyle park (./freestyle.ts) drawn as a tabletop
+// diorama. A slab of ridged dunes on a plinth: at night the crests glow in neon contour lines over
+// violet sand under a striped sun; by day it is a hot sunset; Neon Edge is always night, at the city's
+// edge, its towers lit. The buggies, the gates, boost pads with chevrons, the jump lips, light trails
+// and dust. The camera chases your buggy (V: the whole table). Board UI stickers for the HUD and the
+// cards (the menu, pause, results, the online room), mounted in a shadow root so the page and the
+// game never touch each other's styles.
+// Two people on one screen get a split screen (side by side on a wide stage, stacked on a tall one):
+// a view each, its own diorama, camera and HUD; each half its own touch pad. Two screens play online
+// (./net.ts): the sim runs in lockstep on both, only inputs travel.
 // Bricks: the kernel (fixed step, settle, the ledger: every page write goes back on Recall),
-// @fzlt/core/diorama, terrain, drive (and its `chase` camera), input, pad, sound, ui.
+// @fzlt/core/diorama, terrain, drive (and its `chase` camera), input, pad, sound, ui, presence.
 // Keys: ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro, P pause, V view,
-// M mute, R restart, T tracks; Escape pauses (or, dropped onto a page, gives the page back).
-// Pointer: hold the course for gas, drag to steer. Phones: the pad.
+// M mute, R restart, T menu; Escape pauses (or, dropped onto a page, gives the page back). Two on one
+// screen: P1 W A S D, left Shift drift, Space (or Q) nitro; P2 the arrows, right Shift drift, Enter
+// (or /) nitro. Gamepads: the first is P1, the second P2. Pointer: hold the course for gas, drag to steer.
 import { createEngine, seeded } from "@fzlt/core/kernel";
-import { diorama, type DioramaObject, type DioramaPoints } from "@fzlt/core/diorama";
+import { diorama, type Diorama, type DioramaObject, type DioramaPoints } from "@fzlt/core/diorama";
 import { terrainView, type TerrainView } from "@fzlt/core/terrain";
 import { chase } from "@fzlt/core/drive";
-import { controls } from "@fzlt/core/input";
-import { pad } from "@fzlt/core/pad";
+import { controls, type Controls } from "@fzlt/core/input";
+import { pad, type Pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
 import { mount as buiMount } from "@fzlt/core/ui";
-import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, DTOTAL, SPIN, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
+import { presence, type Presence, type Transport } from "@fzlt/core/presence";
+import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
+import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
+import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
+import { encode, decode, packMode, unpackMode, hashOf, joinRoom, B_AUTO, B_READY } from "./net.ts";
 
 const TAU = 6.283185307179586;
+type Sim = Race | Freestyle;
 
 // ---- palettes by role: night (dark), a hot sunset (light), and the city at night ----
 const DARK = {
@@ -32,6 +42,8 @@ const DARK = {
   chassis: "#1d1c28", cage: "#b9bdd8", tyre: "#111118", hub: "#8d92b4", helmet: "#ff4fa8", visor: "#0a0c16", lamp: "#fff7d6", tail: "#ff2e88",
   gNext: "#ff4fa8", gDone: "#22e6ff", gIdle: "#5a4a9c", gPost: "#2b2546", check: "#f4f1ff", ink: "#0b0a14",
   dust: "#8a78c8", spark: "#ffd166", shadow: "#000000", tower: "#120f26", win: "#22e6ff", win2: "#ff4fa8", win3: "#ffd166",
+  // The park's tables: salt, concrete, the yard's plates, the gap, the ledge tops.
+  salt: "#4a4486", conc: "#2f3658", yard: "#151230", gap: "#06050d", ledge: "#d6ff3e", tables: ["#22e6ff", "#ff4fa8", "#ffd166", "#d6ff3e"],
   cars: [["#eef0ff", "#22e6ff"], ["#d6ff3e", "#1d1c28"], ["#ff4fa8", "#ffd166"], ["#ff8a1f", "#22e6ff"], ["#9b7bff", "#d6ff3e"], ["#22e6ff", "#ff4fa8"]],
 };
 type Pal = typeof DARK;
@@ -43,6 +55,7 @@ const LIGHT: Pal = {
   chassis: "#2a2a33", cage: "#2f3d50", tyre: "#1a1a20", hub: "#d9dbe6", helmet: "#ff5a3c", visor: "#11131c", tail: "#ff3b30",
   gNext: "#ff3d7f", gDone: "#13a9bb", gIdle: "#c79a82", gPost: "#5e3d36", check: "#fffaf0", ink: "#1b1420",
   dust: "#f7d6ae", spark: "#fff1a8", shadow: "#5a2a24",
+  salt: "#fbeedd", conc: "#b8aca4", yard: "#6a4a44", gap: "#5e2f25", ledge: "#ffd25a", tables: ["#fff1dc", "#ff3d7f", "#ffd25a", "#14d8e8"],
   cars: [["#1c2a3c", "#14d8e8"], ["#c6f02a", "#1c2a3c"], ["#ff3d7f", "#fff1a8"], ["#ff7a1a", "#1c2a3c"], ["#7a4cff", "#fff1a8"], ["#14d8e8", "#ff3d7f"]],
 };
 const CITY: Pal = {
@@ -70,6 +83,10 @@ export interface DuneHopOptions {
   /** "page": the keys work anywhere on the page; "focus": only once the game has focus (default:
    *  "page" when dropped onto a page, else "focus"). */
   keyboard?: "page" | "focus";
+  /** The fizlet-rooms server for online play (wss://…); `?rooms=` on the page overrides it. */
+  rooms?: string;
+  /** Laps per race (default: the track's). */
+  laps?: number;
   /** Called when a race ends. */
   onEnd?: (r: DuneHopResult) => void;
 }
@@ -98,6 +115,43 @@ const bestOf = (id: string) => {
   const v = Number(store.get("best:" + id));
   return v > 0 ? v : 0;
 };
+const num = (n: number) => Math.round(n).toLocaleString("en-US");
+const HEAD = `<b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b><b class="dh-chip dh-drift" hidden><small>DRIFT</small><span>0</span></b>`;
+
+/** One view of the table: a canvas and its diorama, its camera, the car it follows, its HUD. */
+interface View {
+  i: number;
+  el: HTMLDivElement;
+  canvas: HTMLCanvasElement;
+  d: Diorama;
+  tv: TerrainView | null;
+  cars: DioramaObject[];
+  hubs: DioramaObject[][];
+  tails: DioramaObject[][];
+  gates: DioramaObject[][];
+  dust: DioramaPoints | null;
+  spark: DioramaPoints | null;
+  sky: CanvasGradient | null;
+  /** Minimap box: x0, z0, scale, w, h, placed. */
+  MB: Float64Array;
+  MAP: Float64Array[];
+  TABLE: { yaw: number; pitch: number; dist: number; tx: number; ty: number; tz: number; ox: number; oy: number; fov: number };
+  chaseO: { dist: number; pitch: number; lift: number; ahead: number; rate: number; turn: number; side: number; snap: boolean };
+  CTP: Float64Array;
+  VEL: Float64Array;
+  target: { pos: Float64Array; yaw: number; vel: Float64Array };
+  car: number;
+  head: HTMLElement;
+  els: HTMLElement[];
+  toastEl: HTMLElement;
+  countEl: HTMLElement;
+  toastT: number;
+  countT: number;
+  shake: number;
+  /** [safe top, safe bottom]. */
+  safe: Float64Array;
+  was: Float64Array;
+}
 
 export function createDuneHop(o: DuneHopOptions = {}) {
   const dropIn = !o.host, reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -113,29 +167,43 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const stage = document.createElement("div");
   stage.className = "dh";
   root.append(stage);
+  const qs = new URLSearchParams(typeof location === "object" ? location.search : "");
+  const ROOMS_URL = qs.get("rooms") ?? o.rooms ?? "", ROOM_N = 16;
 
-  // ---- the stage: canvas, the play surface, the HUD, the cards ----
-  const canvas = document.createElement("canvas");
-  canvas.setAttribute("aria-hidden", "true");
+  // ---- the stage: the play surface, the views (canvas + HUD each), the shared HUD, the cards ----
   const play = document.createElement("button");
   play.type = "button";
   play.className = "dh-play";
-  play.setAttribute("aria-label", "Dune Hop: up or W for gas, down or S to brake, left and right to steer, Shift to drift, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T picks a track");
+  play.setAttribute("aria-label", "Dune Hop: up or W for gas, down or S to brake, left and right to steer, Shift to drift, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T opens the menu");
+  const viewsEl = document.createElement("div");
+  viewsEl.className = "dh-views";
   const hud = document.createElement("div");
   hud.className = "dh-hud";
+  const segRow = (name: string, label: string, opts: [string, string][]) =>
+    `<p class="dh-row dh-seg" role="group" aria-label="${label}" data-seg="${name}">${opts.map(([v, t]) => `<button type="button" class="bui-key" data-v="${v}" aria-pressed="false">${t}</button>`).join("")}</p>`;
   hud.innerHTML =
-    `<div class="dh-head" data-hud><b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b><b class="dh-chip dh-drift" hidden><small>DRIFT</small><span>0</span></b></div>` +
     `<ol class="dh-board" aria-label="Standings"></ol>` +
-    `<p class="dh-keys"><button type="button" class="dh-key dh-k-tracks" aria-label="Tracks (T)">TRACKS</button><button type="button" class="dh-key dh-k-view" aria-label="Camera view (V)">VIEW</button><button type="button" class="dh-key dh-k-mute" aria-label="Sound (M)" aria-pressed="true">♪</button><button type="button" class="dh-key dh-k-pause" aria-label="Pause (P)">❚❚</button></p>` +
-    `<p class="dh-hint"></p><p class="dh-toast" hidden></p><p class="dh-count" hidden></p><p class="dh-demo" hidden>DEMO LAP · TAP TO DRIVE</p><p class="dh-live" aria-live="polite"></p>` +
-    `<div class="dh-card dh-menu" role="dialog" aria-label="Pick a track" hidden><b>DUNE HOP</b><p class="dh-sub">Pick a track, then START. Three rivals, the clock, every jump and drift scored.</p><ul class="dh-tracks"></ul><p class="dh-row"><button type="button" class="bui-key dh-again dh-start">START</button></p><p class="dh-sub dh-menu-keys"></p></div>` +
-    `<div class="dh-card dh-pausec" role="dialog" aria-label="Paused" hidden><b>PAUSED</b><p class="dh-sub dh-p-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-resume">RESUME</button><button type="button" class="bui-key dh-restart">RESTART</button><button type="button" class="bui-key dh-totracks">TRACKS</button></p><p class="dh-row dh-touch"><small class="dh-sub">STEERING</small><button type="button" class="bui-key dh-padk"></button></p></div>` +
-    `<div class="dh-card dh-result" role="dialog" aria-label="Race result" hidden><b class="dh-r-head">RESULT</b><p class="dh-big dh-r-time"></p><p class="dh-sub dh-r-stats"></p><ol class="dh-results"></ol><p class="dh-row"><button type="button" class="bui-key dh-again dh-r-again">RACE AGAIN</button><button type="button" class="bui-key dh-r-next">NEXT TRACK</button><button type="button" class="bui-key dh-r-tracks">TRACKS</button></p></div>`;
-  stage.append(canvas, play, hud);
+    `<p class="dh-keys"><button type="button" class="dh-key dh-k-tracks" aria-label="Menu (T)">MENU</button><button type="button" class="dh-key dh-k-view" aria-label="Camera view (V)">VIEW</button><button type="button" class="dh-key dh-k-mute" aria-label="Sound (M)" aria-pressed="true">♪</button><button type="button" class="dh-key dh-k-pause" aria-label="Pause (P)">❚❚</button></p>` +
+    `<p class="dh-hint"></p><p class="dh-demo" hidden>DEMO LAP · TAP TO DRIVE</p><p class="dh-netchip" role="status" hidden><i></i><span></span></p><p class="dh-live" aria-live="polite"></p>` +
+    `<div class="dh-card dh-menu" role="dialog" aria-label="Dune Hop menu" hidden><b>DUNE HOP</b>` +
+    segRow("mode", "Mode", [["race", "RACE"], ["free", "FREESTYLE"]]) +
+    segRow("players", "Players", [["1", "1 PLAYER"], ["2", "2 · SPLIT"], ["net", "ONLINE"]]) +
+    `<p class="dh-sub dh-m-sub"></p><ul class="dh-tracks"></ul><ul class="dh-park" hidden></ul>` +
+    `<p class="dh-row dh-m-rivals" hidden><small class="dh-sub">RIVALS</small><button type="button" class="bui-key dh-rivk" aria-pressed="true">3 RIVALS</button></p>` +
+    `<p class="dh-row"><button type="button" class="bui-key dh-again dh-start">START</button></p><p class="dh-sub dh-menu-keys"></p></div>` +
+    `<div class="dh-card dh-roomc" role="dialog" aria-label="Online" data-step="join" hidden><b>ONLINE</b><p class="dh-sub dh-room-sub">TWO SCREENS, ONE TABLE</p>` +
+    `<form class="dh-room-join" data-for="join" novalidate><label class="dh-field">INVITE CODE<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" placeholder="DUNE-XXXX-XXXX" /></label>` +
+    `<p class="dh-row dh-rooms"><small class="dh-sub">ROOM</small><button type="button" class="bui-key" data-room="-1" aria-label="Previous room">−</button><output name="roomShow" aria-live="polite">0</output><button type="button" class="bui-key" data-room="1" aria-label="Next room">+</button></p>` +
+    `<p class="dh-row"><button type="submit" class="bui-key dh-again dh-join">JOIN</button><button type="button" class="bui-key dh-room-back">BACK</button></p><p class="dh-say" role="alert"></p>` +
+    `<p class="dh-sub">Both of you: the same code, the same room. Whoever joins first picks the mode and the track. Only inputs travel: both screens run the same race.</p></form>` +
+    `<div data-for="wait" hidden><ol class="dh-seats" aria-label="Seats"><li class="dh-me">P1 · YOU</li><li>OPEN SEAT</li></ol><p class="dh-big dh-wait-say">Waiting for player 2.</p><p class="dh-sub">Send the link: it has the code and the room, so they just press JOIN.</p><p class="dh-row"><button type="button" class="bui-key dh-share">SEND LINK</button><button type="button" class="bui-key dh-room-cancel">CANCEL</button></p></div>` +
+    `<div data-for="gone" hidden><p class="dh-big dh-gone-say"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-room-again">TRY AGAIN</button><button type="button" class="bui-key dh-room-menu">MENU</button></p></div></div>` +
+    `<div class="dh-card dh-pausec" role="dialog" aria-label="Paused" hidden><b>PAUSED</b><p class="dh-sub dh-p-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-resume">RESUME</button><button type="button" class="bui-key dh-restart">RESTART</button><button type="button" class="bui-key dh-totracks">MENU</button></p><p class="dh-row dh-touch"><small class="dh-sub">STEERING</small><button type="button" class="bui-key dh-padk"></button></p></div>` +
+    `<div class="dh-card dh-result" role="dialog" aria-label="Result" hidden><b class="dh-r-head">RESULT</b><p class="dh-big dh-r-time"></p><p class="dh-sub dh-r-stats"></p><ol class="dh-results"></ol><p class="dh-row"><button type="button" class="bui-key dh-again dh-r-again">RACE AGAIN</button><button type="button" class="bui-key dh-r-next">NEXT TRACK</button><button type="button" class="bui-key dh-r-tracks">MENU</button></p></div>`;
+  stage.append(play, viewsEl, hud);
   const $ = <T extends HTMLElement = HTMLElement>(s: string) => hud.querySelector(s) as T;
-  const posEl = $(".dh-pos span"), lapEl = $(".dh-lap span"), timeEl = $(".dh-time span"), bestEl = $(".dh-time small"), scoreEl = $(".dh-score span"), comboEl = $(".dh-score i");
-  const driftEl = $(".dh-drift"), driftN = $(".dh-drift span"), nitroEl = $(".dh-nitro"), nitroBar = $(".dh-nitro b i"), board = $(".dh-board"), hintEl = $(".dh-hint"), toastEl = $(".dh-toast"), countEl = $(".dh-count"), demoEl = $(".dh-demo"), live = $(".dh-live");
-  const keysEl = $(".dh-keys"), menu = $(".dh-menu"), tracksEl = $(".dh-tracks"), pauseC = $(".dh-pausec"), result = $(".dh-result"), headEl = $(".dh-head");
+  const board = $(".dh-board"), hintEl = $(".dh-hint"), demoEl = $(".dh-demo"), live = $(".dh-live"), netChip = $(".dh-netchip");
+  const keysEl = $(".dh-keys"), menu = $(".dh-menu"), tracksEl = $(".dh-tracks"), parkEl = $(".dh-park"), pauseC = $(".dh-pausec"), result = $(".dh-result"), roomC = $(".dh-roomc");
   const muteK = $<HTMLButtonElement>(".dh-k-mute"), viewK = $<HTMLButtonElement>(".dh-k-view");
   for (let c = 0; c < MAX_CARS; c++) board.insertAdjacentHTML("beforeend", `<li><b></b><i></i><span></span><em></em></li>`);
   const rows = [...board.children] as HTMLElement[];
@@ -143,24 +211,75 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const snd = sound(engine, { cues: { count: "click", go: "ready", gate: "click", lap: "power", clean: "power", sketchy: "click", crash: "boom", respawn: "ready", boost: "power", bump: "hit", win: "win", lose: "end" }, volume: 0.1, on: o.sound !== false });
   const paintMute = () => (muteK.textContent = snd.on ? "♪" : "×", muteK.setAttribute("aria-pressed", "" + snd.on));
   paintMute();
-  const c = controls(engine, { keys: { left: [], right: [], gas: [], brake: [], nitro: [], drift: [] }, target: play });
+  // Two controllers: P1 (every key alone; W A S D in a split) and P2 (the arrows in a split).
+  const KEYS = { left: [], right: [], gas: [], brake: [], nitro: [], drift: [] };
+  const c = controls(engine, { keys: KEYS, target: play }), c2 = controls(engine, { keys: KEYS, target: play });
   const GAS = c.id("gas"), BRAKE = c.id("brake"), NITRO = c.id("nitro"), DRIFT = c.id("drift");
+  const ctl = (p: number): Controls => (p ? c2 : c);
+
+  // ---- settings: the menu's picks (remembered on the device) ----
+  const pick = { mode: "race" as "race" | "free", players: "1" as "1" | "2" | "net", rivals: 3 };
+  try {
+    const v = JSON.parse(store.get("menu") || "null");
+    if (v && typeof v === "object") (pick.mode = v.mode === "free" ? "free" : "race"), (pick.players = v.players === "2" ? "2" : "1"), (pick.rivals = v.rivals === 0 ? 0 : 3);
+  } catch {}
+  if (qs.get("mode") === "online") pick.players = "net";
+
+  // ---- the views ----
+  let P: Pal = DARK;
+  const views: View[] = [];
+  function makeView(i: number): View {
+    const el = document.createElement("div");
+    el.className = "dh-view";
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("aria-hidden", "true");
+    const vh = document.createElement("div");
+    vh.className = "dh-vhud";
+    vh.innerHTML = `<div class="dh-head" data-hud><b class="dh-chip dh-who">P${i + 1}</b>${HEAD}</div><p class="dh-toast" hidden></p><p class="dh-count" hidden></p>`;
+    el.append(canvas, vh);
+    viewsEl.append(el);
+    const v: View = {
+      i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], tails: [], gates: [], dust: null, spark: null, sky: null,
+      MB: new Float64Array(6), MAP: [],
+      TABLE: { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 },
+      chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false },
+      CTP: new Float64Array(3), VEL: new Float64Array(3), target: null as unknown as View["target"], car: i,
+      head: vh.querySelector(".dh-head") as HTMLElement, els: [], toastEl: vh.querySelector(".dh-toast") as HTMLElement, countEl: vh.querySelector(".dh-count") as HTMLElement,
+      toastT: 0, countT: 0, shake: 0, safe: new Float64Array(2), was: new Float64Array(16).fill(-1),
+    };
+    v.target = { pos: v.CTP, yaw: 0, vel: v.VEL };
+    const q = (s: string) => v.head.querySelector(s) as HTMLElement;
+    v.els = [q(".dh-pos span"), q(".dh-lap span"), q(".dh-time span"), q(".dh-time small"), q(".dh-score span"), q(".dh-score i"), q(".dh-drift"), q(".dh-drift span"), q(".dh-nitro"), q(".dh-nitro b i"), q(".dh-pos small"), q(".dh-lap small"), q(".dh-pos"), q(".dh-lap"), q(".dh-time")];
+    v.d = diorama(canvas, { light: P.light, ambient: P.amb, background: () => P.table, overlay: (ctx) => drawOverlay(ctx, v), get shadowColor() { return P.shadow; }, maxFaces: 12000 });
+    views.push(v);
+    return v;
+  }
+  /** The views in use: one, or two in a split. */
+  let NV = 1;
+  const active = (v: View) => v.i < NV;
+
   // Touch: two layouts for the left thumb, picked on the pause card and remembered on the device:
   // "steer", a left/right pad (steer only), or "stick", the analog stick. GAS, BRAKE, DRIFT and BOOST
-  // sit under the right thumb either way.
+  // sit under the right thumb either way. In a split each half has its own pad.
   const padKind = () => (store.get("pad") === "stick" ? "stick" : "buttons");
-  const thePad = pad(engine, c, {
-    scheme: padKind(),
-    move: ["", "", "left", "right"],
-    actions: [
-      { intent: "gas", label: "GAS", name: "Gas (up arrow)", key: "↑", role: "go", hold: true },
-      { intent: "brake", label: "BRAKE", name: "Brake (down arrow)", key: "↓", role: "attack", hold: true },
-      { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "fallin", hold: true },
-      { intent: "nitro", label: "BOOST", name: "Nitro boost (space)", key: "␣", role: "sys", hold: true },
-    ],
-    host: stage,
-  });
-  thePad.el.classList.add("dh-pad");
+  const v0 = makeView(0);
+  const padOf = (cc: Controls, host: HTMLElement) => {
+    const p = pad(engine, cc, {
+      scheme: padKind(),
+      move: ["", "", "left", "right"],
+      actions: [
+        { intent: "gas", label: "GAS", name: "Gas (up arrow)", key: "↑", role: "go", hold: true },
+        { intent: "brake", label: "BRAKE", name: "Brake (down arrow)", key: "↓", role: "attack", hold: true },
+        { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "fallin", hold: true },
+        { intent: "nitro", label: "BOOST", name: "Nitro boost (space)", key: "␣", role: "sys", hold: true },
+      ],
+      host,
+    });
+    p.el.classList.add("dh-pad");
+    return p;
+  };
+  const thePad = padOf(c, v0.el);
+  let pad2: Pad | null = null;
   const padK = () => hud.querySelector(".dh-padk") as HTMLButtonElement;
   function paintPad() {
     const stick = thePad.scheme === "stick";
@@ -169,33 +288,37 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (k) (k.textContent = stick ? "STICK" : "◀ ▶ PAD"), k.setAttribute("aria-label", `Touch steering: ${stick ? "the stick" : "the left and right pad"} (tap to switch)`);
   }
   function swapPad() {
-    thePad.setScheme(thePad.scheme === "stick" ? "buttons" : "stick");
-    store.set("pad", thePad.scheme === "stick" ? "stick" : "steer");
-    c.press("left", false), c.press("right", false);
+    const next = thePad.scheme === "stick" ? "buttons" : "stick";
+    thePad.setScheme(next);
+    pad2?.setScheme(next);
+    store.set("pad", next === "stick" ? "stick" : "steer");
+    for (const cc of [c, c2]) cc.press("left", false), cc.press("right", false);
     paintPad();
   }
 
-  // ---- the race and the diorama ----
-  let def = trackById(o.track ?? TRACKS[0]!.id), race: Race = createRace(def, o.seed ?? 1);
-  let P: Pal = pal();
+  // ---- the sim and the scene ----
+  let def = trackById(o.track ?? TRACKS[0]!.id);
+  /** What the sim was made for: mode, people, rivals, track, laps. */
+  const want = { mode: "race" as "race" | "free", humans: 1, rivals: 3, laps: o.laps ?? 0 };
+  let sim: Sim = createRace(def, o.seed ?? 1, { laps: want.laps });
+  const isRace = () => sim.kind === "race";
+  const rc = () => sim as Race;
+  const fs = () => sim as Freestyle;
   function pal(): Pal {
-    return def.city ? CITY : pageTheme() === "light" ? LIGHT : DARK;
+    return isRace() && def.city ? CITY : pageTheme() === "light" ? LIGHT : DARK;
   }
-  const dio = diorama(canvas, { light: P.light, ambient: P.amb, background: () => P.table, overlay: drawOverlay, get shadowColor() { return P.shadow; }, maxFaces: 12000 });
-  let tv: TerrainView, dust: DioramaPoints, spark: DioramaPoints;
-  const cars: DioramaObject[] = [], hubs: DioramaObject[][] = [], tails: DioramaObject[][] = [], gates: DioramaObject[][] = [];
+  P = pal();
   const DV = new Float64Array(DUST * 5), SV = new Float64Array(SPARK * 5);
   // Trails: per car, the last TRAIL positions of each tail light (a ring), its head and length.
   const TR = new Float64Array(MAX_CARS * TRAIL * 6), TRN = new Int32Array(MAX_CARS * 2);
-  let EDGES: Float64Array[] = [], LINES: Float32Array[] = [], MAP: Float64Array[] = [];
+  let EDGES: Float64Array[] = [], LINES: Float32Array[] = [];
   const rnd = seeded(20261109);
   const STARS = new Float32Array(120);
   for (let i = 0; i < 120; i++) STARS[i] = rnd();
-  let sky: CanvasGradient | null = null;
-  const MB = new Float64Array(6); // minimap: x0, z0, scale, w, h, placed
+  const tmp = new Float64Array(3), tmp2 = new Float64Array(3);
 
   function trackEdges(p: Path) {
-    const E = new Float64Array(p.n * 6), half = TRACK_W / 2, t = race.t;
+    const E = new Float64Array(p.n * 6), half = TRACK_W / 2, t = sim.t;
     for (let i = 0; i < p.n; i++)
       for (let k = 0; k < 2; k++) {
         const s = k ? 1 : -1, x = p.P[i * 2]! - p.T[i * 2 + 1]! * half * s, z = p.P[i * 2 + 1]! + p.T[i * 2]! * half * s;
@@ -203,9 +326,24 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       }
     return E;
   }
+  /** The park's table edges as closed loops (the scene strokes them like a track's edges). */
+  function tableEdges() {
+    const out: Float64Array[] = [], t = sim.t;
+    for (const tb of fs().park.tables) {
+      const n = 4 * 40, E = new Float64Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const s = i / 40, side = s | 0, f = s - side, hx = TX - 0.15, hz = TZ - 0.15;
+        const x = tb.cx + (side === 0 ? -hx + 2 * hx * f : side === 1 ? hx : side === 2 ? hx - 2 * hx * f : -hx);
+        const z = tb.cz + (side === 0 ? -hz : side === 1 ? -hz + 2 * hz * f : side === 2 ? hz : hz - 2 * hz * f);
+        E[i * 3] = x; E[i * 3 + 1] = t.height(x, z) + 0.06; E[i * 3 + 2] = z;
+      }
+      out.push(E);
+    }
+    return out;
+  }
   /** Contour lines of the dunes at `levels` (marching squares), off the track: [x0, y, z0, x1, y, z1, …] per level. */
   function contours(levels: ArrayLike<number>) {
-    const t = race.t, out: Float32Array[] = [], W1 = t.cols + 1, cs = t.cell, tr = race.tr;
+    const t = sim.t, out: Float32Array[] = [], W1 = t.cols + 1, cs = t.cell, race = isRace() ? rc() : null;
     const cx = [0, 1, 1, 0], cz = [0, 0, 1, 1], h = [0, 0, 0, 0], Pp: number[] = [];
     for (let l = 0; l < levels.length; l++) {
       const Lv = levels[l]!, seg: number[] = [];
@@ -222,7 +360,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
           }
           for (let k = 0; k + 3 < Pp.length; k += 4) {
             const mx = (Pp[k]! + Pp[k + 2]!) / 2, mz = (Pp[k + 1]! + Pp[k + 3]!) / 2;
-            if (tr.near(mx, mz)[0]! < TRACK_W / 2 + 0.6) continue;
+            if (race ? race.tr.near(mx, mz)[0]! < TRACK_W / 2 + 0.6 : fs().park.tableAt(mx, mz, -0.4) < 0) continue;
             seg.push(Pp[k]!, Lv + 0.04, Pp[k + 1]!, Pp[k + 2]!, Lv + 0.04, Pp[k + 3]!);
           }
         }
@@ -230,88 +368,115 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
     return out;
   }
+  /** The sim changed: its shared geometry, then every view's scene. */
+  function buildAll() {
+    EDGES = isRace() ? rc().tr.paths.map(trackEdges) : tableEdges();
+    LINES = contours(isRace() ? [0.95, 1.5, 2.1] : [0.75, 1.45, 2.15]);
+    for (const v of views) buildScene(v);
+  }
 
-  function buildScene() {
-    const t = race.t, tr = race.tr, HX = tr.HX, HZ = tr.HZ;
-    dio.clear();
-    cars.length = hubs.length = tails.length = gates.length = 0;
-    dio.setLight(P.light, P.amb);
-    dio.cluster("sky", { fixed: -10 });
-    dio.cluster("table", { fixed: -5 });
-    dio.decal("sky", 0, paintSky);
+  function buildScene(v: View) {
+    const d = v.d, t = sim.t, HX = sim.HX, HZ = sim.HZ, race = isRace() ? rc() : null;
+    d.clear();
+    v.cars = []; v.hubs = []; v.tails = []; v.gates = [];
+    d.setLight(P.light, P.amb);
+    d.cluster("sky", { fixed: -10 });
+    d.cluster("table", { fixed: -5 });
+    d.decal("sky", 0, (ctx) => paintSky(ctx, v));
     const city = P.city, extra = city ? 9 : 0;
-    dio.add({ id: "table", size: [HX * 2 + 7 + extra * 2, 0.5, HZ * 2 + 6 + extra * 2], pos: [0, -1.55, 0.6 - (city ? extra * 0.6 : 0)], color: P.table, cluster: "table", layer: 0, pick: false });
-    dio.add({ id: "plinth", size: [HX * 2 + 0.5, 1.05, HZ * 2 + 0.5], pos: [0, -1.05, 0], color: P.plinth, cluster: "table", layer: 1, pick: false });
-    dio.add({ id: "rim", size: [HX * 2 + 0.7, 0.12, HZ * 2 + 0.7], pos: [0, -0.2, 0], color: P.rim, cluster: "table", layer: 2, emissive: true, pick: false });
-    tv = terrainView(dio, t, {
-      bands: [[0.55, P.sand[0]!], [1.15, P.sand[1]!], [1.85, P.sand[2]!], [99, P.crest]], steep: 0.42, steepColor: P.steep, kinds: [P.track],
+    d.add({ id: "table", size: [HX * 2 + 7 + extra * 2, 0.5, HZ * 2 + 6 + extra * 2], pos: [0, -1.55 - (race ? 0 : 1.4), 0.6 - (city ? extra * 0.6 : 0)], color: P.table, cluster: "table", layer: 0, pick: false });
+    if (race) {
+      d.add({ id: "plinth", size: [HX * 2 + 0.5, 1.05, HZ * 2 + 0.5], pos: [0, -1.05, 0], color: P.plinth, cluster: "table", layer: 1, pick: false });
+      d.add({ id: "rim", size: [HX * 2 + 0.7, 0.12, HZ * 2 + 0.7], pos: [0, -0.2, 0], color: P.rim, cluster: "table", layer: 2, emissive: true, pick: false });
+    } else
+      // Four tables: a plinth each, its rim lit in the table's own colour.
+      fs().park.tables.forEach((tb, k) => {
+        d.add({ size: [TX * 2 + 0.3, 2.4, TZ * 2 + 0.3], pos: [tb.cx, -2.4, tb.cz], color: P.plinth, cluster: "table", layer: 1, pick: false });
+        d.add({ size: [TX * 2 + 0.5, 0.14, TZ * 2 + 0.5], pos: [tb.cx, -0.25, tb.cz], color: P.tables[k]!, cluster: "table", layer: 2, emissive: true, pick: false });
+      });
+    v.tv = terrainView(d, t, {
+      bands: [[0.55, P.sand[0]!], [1.15, P.sand[1]!], [1.85, P.sand[2]!], [99, P.crest]], steep: 0.42, steepColor: P.steep, kinds: race ? [P.track] : [P.track, P.salt, P.conc, P.yard, P.gap, P.ledge],
       light: P.light, ambient: P.amb, lod: [18, 36], shadows: MAX_CARS, shadowColor: P.shadow,
     });
-    dio.decal("terrain", 1, paintLines);
+    d.decal("terrain", 1, (ctx) => paintLines(ctx, v));
     // The city: towers behind the far edge and down the left, their windows lit in neon bands.
     if (city) {
       const r = seeded(def.seed);
-      const tower = (x: number, z: number, w: number, d: number, h: number, k: number) => {
+      const tower = (x: number, z: number, w: number, dd: number, h: number, k: number) => {
         const id = "tw" + k;
-        dio.add({ id, size: [w, h, d], pos: [x, -1.3, z], color: P.tower, pick: false });
+        d.add({ id, size: [w, h, dd], pos: [x, -1.3, z], color: P.tower, pick: false });
         const bands = 2 + ((r() * 3) | 0), col = [P.win, P.win2, P.win3][k % 3]!;
-        // Lit bands round it (side faces only: no lid to paint over the roof).
-        for (let b = 0; b < bands; b++) dio.add({ size: [w + 0.04, 0.12, d + 0.04], pos: [0, -h + h * (0.25 + (b * 0.6) / bands), 0], on: id, color: col, emissive: true, mask: 60, pick: false });
-        if (r() < 0.45) dio.add({ size: [w * 0.7, 0.5, 0.12], pos: [0, 0, d / 2 - 0.1], on: id, color: k % 2 ? P.win2 : P.win, emissive: true, pick: false });
+        for (let b = 0; b < bands; b++) d.add({ size: [w + 0.04, 0.12, dd + 0.04], pos: [0, -h + h * (0.25 + (b * 0.6) / bands), 0], on: id, color: col, emissive: true, mask: 60, pick: false });
+        if (r() < 0.45) d.add({ size: [w * 0.7, 0.5, 0.12], pos: [0, 0, dd / 2 - 0.1], on: id, color: k % 2 ? P.win2 : P.win, emissive: true, pick: false });
       };
       let k = 0;
       for (let x = -HX - 6; x < HX + 6; x += 2.6 + r() * 2.4) tower(x, -HZ - 4 - r() * 6, 1.6 + r() * 1.6, 1.6 + r() * 1.4, 3 + r() * 9, k++);
       for (let z = -HZ + 2; z < HZ; z += 3 + r() * 2.5) tower(-HX - 4 - r() * 4, z, 1.4 + r() * 1.2, 1.6 + r() * 1.4, 2 + r() * 5, k++);
     }
-    // Rocks off the track and neon pylons along it.
-    const r = seeded(7);
-    for (let k = 0, n = 0; k < 400 && n < (def.cols * def.rows) / 280; k++) {
-      const x = (r() * 2 - 1) * (HX - 1.2), z = (r() * 2 - 1) * (HZ - 1.2);
-      if (tr.near(x, z)[0]! < Infinity) continue;
-      const s = 0.35 + r() * 0.5;
-      dio.add({ shape: "cyl", sides: 5 + (n % 3), top: 0.45, size: [s * 1.6, s, s * 1.3], pos: [x, t.height(x, z) - 0.05, z], rot: [0, r() * TAU, 0], color: P.rock, pick: false });
-      n++;
+    const pylon = (id: string, x: number, z: number, h: number, tip: string) => {
+      d.add({ id, shape: "group", size: [0.3, 0, 0.3], pos: [x, t.height(x, z), z], pick: false });
+      d.add({ shape: "cyl", sides: 6, size: [0.16, h, 0.16], on: id, color: P.pylon, pick: false });
+      d.add({ shape: "cyl", sides: 6, size: [0.22, 0.16, 0.22], pos: [0, h, 0], on: id, color: tip, emissive: true, pick: false });
+    };
+    if (race) {
+      const tr = race.tr;
+      // Rocks off the track and neon pylons along it.
+      const r = seeded(7);
+      for (let k = 0, n = 0; k < 400 && n < (def.cols * def.rows) / 280; k++) {
+        const x = (r() * 2 - 1) * (HX - 1.2), z = (r() * 2 - 1) * (HZ - 1.2);
+        if (tr.near(x, z)[0]! < Infinity) continue;
+        const s = 0.35 + r() * 0.5;
+        d.add({ shape: "cyl", sides: 5 + (n % 3), top: 0.45, size: [s * 1.6, s, s * 1.3], pos: [x, t.height(x, z) - 0.05, z], rot: [0, r() * TAU, 0], color: P.rock, pick: false });
+        n++;
+      }
+      const main = tr.main;
+      for (let i = 3; i < main.n; i += 9) {
+        const side = (i / 9) & 1 ? 1 : -1, x = main.P[i * 2]! - main.T[i * 2 + 1]! * (TRACK_W / 2 + 0.75) * side, z = main.P[i * 2 + 1]! + main.T[i * 2]! * (TRACK_W / 2 + 0.75) * side;
+        if (tr.near(x, z)[0]! < TRACK_W / 2 + 0.3) continue;
+        pylon("py" + i, x, z, city ? 1.5 : 0.9, side > 0 ? P.tip : P.tip2);
+      }
+      // The gates: two posts and a bar across the track; gate 0 is the chequered start and finish.
+      for (let g = 0; g < tr.GATE.length; g++) {
+        const i = tr.GATE[g]!, x = main.P[i * 2]!, z = main.P[i * 2 + 1]!, id = "gate" + g, w = TRACK_W + 1.1, yaw = Math.atan2(-main.T[i * 2 + 1]!, main.T[i * 2]!);
+        d.add({ id, shape: "group", size: [0.6, 0, w], pos: [x, t.height(x, z), z], rot: [0, yaw, 0], pick: false });
+        const a = d.add({ shape: "cyl", sides: 8, size: [0.24, 2.5, 0.24], pos: [0, 0, -w / 2], on: id, color: P.gIdle, emissive: true, pick: false });
+        const b = d.add({ shape: "cyl", sides: 8, size: [0.24, 2.5, 0.24], pos: [0, 0, w / 2], on: id, color: P.gIdle, emissive: true, pick: false });
+        const bar = d.add({ size: [0.3, 0.32, w + 0.24], pos: [0, 2.5, 0], on: id, color: P.gIdle, emissive: true, pick: false });
+        for (const zz of [-w / 2, w / 2]) d.add({ shape: "cyl", sides: 8, size: [0.5, 0.14, 0.5], pos: [0, -0.02, zz], on: id, color: P.gPost, pick: false });
+        v.gates.push([a, b, bar]);
+        if (!g) for (let k = 0; k < 8; k++) d.add({ size: [0.32, 0.16, w / 8], pos: [0, 2.5 + (k & 1 ? 0 : 0.16), -w / 2 + (k + 0.5) * (w / 8)], on: id, color: k & 1 ? P.ink : P.check, pick: false, layer: 9 });
+        d.decal(id, 20, (ctx) => glow(ctx, v, g));
+      }
+    } else {
+      const park = fs().park;
+      // Pylons on each table's corners, in its colour; the yard's ledges get lit edges.
+      park.tables.forEach((tb, k) => {
+        for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) pylon(`py${k}${sx}${sz}`, tb.cx + sx * (TX - 0.9), tb.cz + sz * (TZ - 0.9), 1.4, P.tables[k]!);
+      });
+      const B = park.BOXES;
+      for (let b = 0; b < B.length; b += 5) {
+        if (park.tableAt(B[b]!, B[b + 1]!) !== 3) continue;
+        const y = PARK_TOP + B[b + 4]!;
+        for (const s of [-1, 1]) d.add({ size: [B[b + 2]! * 2, 0.06, 0.08], pos: [B[b]!, y - 0.02, B[b + 1]! + s * B[b + 3]!], color: P.ledge, emissive: true, pick: false });
+      }
     }
-    const main = tr.main;
-    for (let i = 3; i < main.n; i += 9) {
-      const side = (i / 9) & 1 ? 1 : -1, x = main.P[i * 2]! - main.T[i * 2 + 1]! * (TRACK_W / 2 + 0.75) * side, z = main.P[i * 2 + 1]! + main.T[i * 2]! * (TRACK_W / 2 + 0.75) * side;
-      if (tr.near(x, z)[0]! < TRACK_W / 2 + 0.3) continue;
-      const id = "py" + i;
-      dio.add({ id, shape: "group", size: [0.3, 0, 0.3], pos: [x, t.height(x, z), z], pick: false });
-      dio.add({ shape: "cyl", sides: 6, size: [0.16, city ? 1.5 : 0.9, 0.16], on: id, color: P.pylon, pick: false });
-      dio.add({ shape: "cyl", sides: 6, size: [0.22, 0.16, 0.22], pos: [0, city ? 1.5 : 0.9, 0], on: id, color: side > 0 ? P.tip : P.tip2, emissive: true, pick: false });
-    }
-    // The gates: two posts and a bar across the track; gate 0 is the chequered start and finish.
-    for (let g = 0; g < tr.GATE.length; g++) {
-      const i = tr.GATE[g]!, x = main.P[i * 2]!, z = main.P[i * 2 + 1]!, id = "gate" + g, w = TRACK_W + 1.1, yaw = Math.atan2(-main.T[i * 2 + 1]!, main.T[i * 2]!);
-      dio.add({ id, shape: "group", size: [0.6, 0, w], pos: [x, t.height(x, z), z], rot: [0, yaw, 0], pick: false });
-      const a = dio.add({ shape: "cyl", sides: 8, size: [0.24, 2.5, 0.24], pos: [0, 0, -w / 2], on: id, color: P.gIdle, emissive: true, pick: false });
-      const b = dio.add({ shape: "cyl", sides: 8, size: [0.24, 2.5, 0.24], pos: [0, 0, w / 2], on: id, color: P.gIdle, emissive: true, pick: false });
-      const bar = dio.add({ size: [0.3, 0.32, w + 0.24], pos: [0, 2.5, 0], on: id, color: P.gIdle, emissive: true, pick: false });
-      for (const zz of [-w / 2, w / 2]) dio.add({ shape: "cyl", sides: 8, size: [0.5, 0.14, 0.5], pos: [0, -0.02, zz], on: id, color: P.gPost, pick: false });
-      gates.push([a, b, bar]);
-      if (!g) for (let k = 0; k < 8; k++) dio.add({ size: [0.32, 0.16, w / 8], pos: [0, 2.5 + (k & 1 ? 0 : 0.16), -w / 2 + (k + 0.5) * (w / 8)], on: id, color: k & 1 ? P.ink : P.check, pick: false, layer: 9 });
-      dio.decal(id, 20, (ctx) => glow(ctx, g));
-    }
-    for (let k = 0; k < race.count; k++) buildCar(k);
-    dust = dio.points({ cap: DUST, color: P.dust, layer: 4 });
-    spark = dio.points({ cap: SPARK, color: P.spark, layer: 6 });
-    for (let k = 0; k < race.count; k++) dio.decal("car" + k, 4, (ctx) => paintTrail(ctx, k));
-    EDGES = race.tr.paths.map(trackEdges);
-    LINES = contours([0.95, 1.5, 2.1]);
-    sky = null;
-    MB[5] = 0;
-    paintGates();
-    pose();
+    for (let k = 0; k < sim.count; k++) buildCar(v, k);
+    v.dust = d.points({ cap: DUST, color: P.dust, layer: 4 });
+    v.spark = d.points({ cap: SPARK, color: P.spark, layer: 6 });
+    for (let k = 0; k < sim.count; k++) d.decal("car" + k, 4, (ctx) => paintTrail(ctx, v, k));
+    v.sky = null;
+    v.MB[5] = 0;
+    paintGates(v);
+    pose(v);
   }
 
   /** A buggy: a low tub with side pods and a wedge nose, a splitter, a cage with a light bar, a rear
    *  wing; the driver's helmet; four knobbly wheels on dished hubs. Its colours: body and accent. */
-  function buildCar(k: number) {
-    const id = "car" + k, [body, acc] = P.cars[k]!;
-    cars.push(dio.add({ id, shape: "group", size: [2.0, 0, 1.6], tag: { car: k } }));
+  function buildCar(v: View, k: number) {
+    const d = v.d, id = "car" + k, [body, acc] = P.cars[k]!;
+    v.cars.push(d.add({ id, shape: "group", size: [2.0, 0, 1.6], tag: { car: k } }));
     const part = (size: number[], pos: number[], color: string, op: { shape?: "box" | "wedge" | "cyl"; emissive?: boolean; sides?: number; top?: number; rot?: number[] } = {}) =>
-      dio.add({ shape: op.shape || "box", size, pos, rot: op.rot, on: id, color, emissive: op.emissive, sides: op.sides, top: op.top, pick: false });
+      d.add({ shape: op.shape || "box", size, pos, rot: op.rot, on: id, color, emissive: op.emissive, sides: op.sides, top: op.top, pick: false });
     part([1.92, 0.14, 0.86], [0, -0.26, 0], P.chassis);
     part([1.04, 0.28, 0.66], [-0.16, -0.12, 0], body!);
     // Side pods end ahead of the rear wheels and well behind the front ones; the nose and splitter
@@ -335,69 +500,67 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     part([0.06, 0.06, 0.78], [0.14, 0.76, 0], P.cage);
     part([0.12, 0.09, 0.62], [0.16, 0.8, 0], P.lamp, { emissive: true });
     for (const z of [-0.28, 0.28]) part([0.04, 0.07, 0.16], [1.1, -0.1, z], P.lamp, { emissive: true });
-    tails[k] = [part([0.05, 0.08, 0.16], [-1.09, 0.06, -0.24], P.tail, { emissive: true }), part([0.05, 0.08, 0.16], [-1.09, 0.06, 0.24], P.tail, { emissive: true })];
-    const v = race.cars[k]!, hs: DioramaObject[] = [];
+    v.tails[k] = [part([0.05, 0.08, 0.16], [-1.09, 0.06, -0.24], P.tail, { emissive: true }), part([0.05, 0.08, 0.16], [-1.09, 0.06, 0.24], P.tail, { emissive: true })];
+    const car = sim.cars[k]!, hs: DioramaObject[] = [];
     for (let i = 0; i < 4; i++) {
-      const hid = id + "h" + i, side = v.wheels[i * 2 + 1]! > 0 ? 1 : -1;
-      const hub = dio.add({ id: hid, shape: "group", size: [0.6, 0, 0.6], on: id });
-      dio.add({ shape: "cyl", sides: 14, size: [0.74, 0.32, 0.74], pos: [0, 0, -0.16], rot: [Math.PI / 2, 0, 0], on: hid, color: P.tyre, pick: false });
-      dio.add({ shape: "cyl", sides: 8, size: [0.42, 0.05, 0.42], pos: [0, 0, side > 0 ? 0.16 : -0.21], rot: [Math.PI / 2, 0, 0], on: hid, color: k ? acc! : P.hub, pick: false });
-      dio.add({ size: [0.38, 0.06, 0.06], pos: [0, -0.03, side > 0 ? 0.2 : -0.21], on: hid, color: P.chassis, pick: false });
+      const hid = id + "h" + i, side = car.wheels[i * 2 + 1]! > 0 ? 1 : -1;
+      const hub = d.add({ id: hid, shape: "group", size: [0.6, 0, 0.6], on: id });
+      d.add({ shape: "cyl", sides: 14, size: [0.74, 0.32, 0.74], pos: [0, 0, -0.16], rot: [Math.PI / 2, 0, 0], on: hid, color: P.tyre, pick: false });
+      d.add({ shape: "cyl", sides: 8, size: [0.42, 0.05, 0.42], pos: [0, 0, side > 0 ? 0.16 : -0.21], rot: [Math.PI / 2, 0, 0], on: hid, color: k ? acc! : P.hub, pick: false });
+      d.add({ size: [0.38, 0.06, 0.06], pos: [0, -0.03, side > 0 ? 0.2 : -0.21], on: hid, color: P.chassis, pick: false });
       hs.push(hub);
     }
-    hubs[k] = hs;
+    v.hubs[k] = hs;
   }
 
   // ---- state ----
-  const I = new Float64Array(IK), tmp = new Float64Array(3), tmp2 = new Float64Array(3);
+  const I = new Float64Array(IK);
   // Pointer drive: down, start x, current x, id.
   const PD = new Float64Array(4);
   PD[3] = -1;
-  // [0] measure, [1] theme, [2] safe top, [3] safe bottom, [4] drawn once, [5] narrow.
-  const V = new Float64Array(6);
+  // [0] measure, [1] theme.
+  const V = new Float64Array(2);
   V[0] = V[1] = 1;
-  let mode: "menu" | "race" | "demo" = "menu", paused = false, auto = !!o.attract, view = 1, dirty = true, hudDirty = true, shake = 0, flash = -1, flashT = 0, dropT = 0, toastT = 0, countT = 0, cardAt = -1, pulse = 0, boardT = 0, emitK = 0, lastBest = 0, newBest = false, destroyed = false;
-  const was = new Float64Array(12).fill(-1);
-  const TABLE = { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 };
-  const chaseO = { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false };
-  /** The view: the car its chase camera follows and whose events it calls out (a split screen adds a
-   *  second view on car 1, with its own camera, chase options and HUD). */
-  const VIEW = { car: 0 };
-  const CTP = new Float64Array(3), VEL = new Float64Array(3), target = { pos: CTP, yaw: 0, vel: VEL };
+  let mode: "menu" | "race" | "demo" = "menu", paused = false, auto = !!o.attract, view = 1, dirty = true, hudDirty = true, flash = -1, flashT = 0, cardAt = -1, pulse = 0, boardT = 0, emitK = 0, newBest = false, destroyed = false;
+  /** Per car: the drop-in after a respawn. */
+  const DROP = new Float64Array(MAX_CARS);
+  /** Freestyle: the best score on this device (kept as it grows). */
+  let freeBest = Number(store.get("best:freestyle")) || 0;
   const ro = new ResizeObserver(() => ((V[0] = 1), engine.wake()));
   ro.observe(stage);
   const mo = new MutationObserver(() => ((V[1] = 1), engine.wake()));
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
-  engine.signal.addEventListener("abort", () => (ro.disconnect(), mo.disconnect(), (destroyed = true)), { once: true });
+  engine.signal.addEventListener("abort", () => (ro.disconnect(), mo.disconnect(), (destroyed = true), net.end(false)), { once: true });
 
-  function pose() {
-    const t = race.t, tr = race.tr;
-    for (let k = 0; k < race.count; k++) {
-      const car = cars[k]!, v = race.cars[k]!, p = k * 3, tum = race.C[k * K + PH] === CRASH;
-      car.pos[0] = race.pos[p]!; car.pos[1] = race.pos[p + 1]!; car.pos[2] = race.pos[p + 2]!;
-      car.rot[0] = race.rot[p]!; car.rot[1] = race.rot[p + 1]!; car.rot[2] = race.rot[p + 2]!;
-      if (!k && dropT > 0) car.pos[1] = car.pos[1]! + dropT * dropT * 3;
+  function pose(v: View) {
+    const t = sim.t, HX = sim.HX, HZ = sim.HZ;
+    for (let k = 0; k < sim.count; k++) {
+      const car = v.cars[k]!, dv = sim.cars[k]!, p = k * 3, tum = sim.C[k * K + PH] === CRASH;
+      car.pos[0] = sim.pos[p]!; car.pos[1] = sim.pos[p + 1]!; car.pos[2] = sim.pos[p + 2]!;
+      car.rot[0] = sim.rot[p]!; car.rot[1] = sim.rot[p + 1]!; car.rot[2] = sim.rot[p + 2]!;
+      if (DROP[k]! > 0) car.pos[1] = car.pos[1]! + DROP[k]! * DROP[k]! * 3;
       for (let i = 0; i < 4; i++) {
-        const h = hubs[k]![i]!;
-        h.pos[0] = v.wheels[i * 2]!;
-        h.pos[1] = tum ? -0.2 : -(v.rest - v.comp[i]!);
-        h.pos[2] = v.wheels[i * 2 + 1]!;
-        h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, v.steerAngle)) : 0;
-        h.rot[2] = -v.spin[i]!;
+        const h = v.hubs[k]![i]!;
+        h.pos[0] = dv.wheels[i * 2]!;
+        h.pos[1] = tum ? -0.2 : -(dv.rest - dv.comp[i]!);
+        h.pos[2] = dv.wheels[i * 2 + 1]!;
+        h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, dv.steerAngle)) : 0;
+        h.rot[2] = -dv.spin[i]!;
       }
-      const x = car.pos[0]!, z = car.pos[2]!, inside = Math.abs(x) < tr.HX && Math.abs(z) < tr.HZ, lift = inside ? car.pos[1]! - t.height(x, z) : 9;
-      tv.shadow(k, x, z, 1.3, inside ? Math.max(0, 0.34 - lift * 0.1) : 0);
+      const x = car.pos[0]!, z = car.pos[2]!, inside = Math.abs(x) < HX && Math.abs(z) < HZ, lift = inside ? car.pos[1]! - t.height(x, z) : 9;
+      v.tv!.shadow(k, x, z, 1.3, inside ? Math.max(0, 0.34 - lift * 0.1) : 0);
     }
   }
-  function paintGates() {
-    const next = race.C[NEXT]! % race.gates, ph = race.R[0]!;
-    for (let g = 0; g < gates.length; g++) {
-      const parts = gates[g]!, on = mode !== "menu" && ph !== DONE && g === next, col = flash === g ? P.check : on ? P.gNext : P.gIdle;
+  function paintGates(v: View) {
+    if (!isRace()) return;
+    const next = sim.C[v.car * K + NEXT]! % rc().gates, ph = sim.R[0]!;
+    for (let g = 0; g < v.gates.length; g++) {
+      const parts = v.gates[g]!, on = mode !== "menu" && ph !== DONE && g === next, col = flash === g ? P.check : on ? P.gNext : P.gIdle;
       for (let k = 0; k < 3; k++) (parts[k]!.color = col), (parts[k]!.emissive = P.night || on || flash === g);
     }
   }
 
-  // ---- FX ----
+  // ---- FX (simulated in view 0's pools; a second view copies them before it draws) ----
   function puff(pool: DioramaPoints, VV: Float64Array, cap: number, x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, r: number, a: number) {
     let j = pool.n < cap ? pool.n++ : -1;
     if (j < 0) {
@@ -426,126 +589,142 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
     return any;
   }
+  const copyPool = (a: DioramaPoints, b: DioramaPoints) => {
+    b.n = a.n;
+    b.x.set(a.x); b.y.set(a.y); b.z.set(a.z); b.r.set(a.r); b.a.set(a.a);
+  };
   function burst(x: number, y: number, z: number, n: number, sp: number) {
     for (let k = 0; k < n; k++) {
       const a = rnd() * TAU, u = 0.4 + rnd();
-      puff(spark, SV, SPARK, x, y, z, Math.cos(a) * sp * u, 2 + rnd() * sp, Math.sin(a) * sp * u, 0.5 + rnd() * 0.5, 0.07, 1);
+      puff(v0.spark!, SV, SPARK, x, y, z, Math.cos(a) * sp * u, 2 + rnd() * sp, Math.sin(a) * sp * u, 0.5 + rnd() * 0.5, 0.07, 1);
     }
   }
   function dustBurst(x: number, y: number, z: number, n: number) {
     for (let k = 0; k < n; k++) {
       const a = rnd() * TAU;
-      puff(dust, DV, DUST, x + Math.cos(a) * 0.6, y, z + Math.sin(a) * 0.6, Math.cos(a) * 2.2, 0.6 + rnd(), Math.sin(a) * 2.2, 0.7 + rnd() * 0.5, 0.22, 0.6);
+      puff(v0.dust!, DV, DUST, x + Math.cos(a) * 0.6, y, z + Math.sin(a) * 0.6, Math.cos(a) * 2.2, 0.6 + rnd(), Math.sin(a) * 2.2, 0.7 + rnd() * 0.5, 0.22, 0.6);
     }
   }
   function stepFx(dt: number) {
     let any = false;
-    for (let k = 0; k < race.count; k++) {
-      const v = race.cars[k]!, ph = race.C[k * K + PH]!;
+    for (let k = 0; k < sim.count; k++) {
+      const dv = sim.cars[k]!, ph = sim.C[k * K + PH]!;
       // Dust from the rear wheels by how hard they dig (fewer for the rivals, and none in reduced motion).
       if (ph !== CRASH && !reduced) {
-        emitK += v.dust * (k ? 30 : 60) * dt;
+        emitK += dv.dust * (k < sim.humans ? 60 : 30) * dt;
         while (emitK >= 1) {
           emitK -= 1;
           const w = 2 + (rnd() < 0.5 ? 1 : 0);
-          puff(dust, DV, DUST, v.wheel[w * 3]! + (rnd() - 0.5) * 0.3, v.wheel[w * 3 + 1]! - 0.2, v.wheel[w * 3 + 2]! + (rnd() - 0.5) * 0.3, -v.vel[0]! * 0.15 + (rnd() - 0.5), 0.5 + rnd() * 0.6, -v.vel[2]! * 0.15 + (rnd() - 0.5), 0.5 + rnd() * 0.4, 0.08, 0.26);
+          puff(v0.dust!, DV, DUST, dv.wheel[w * 3]! + (rnd() - 0.5) * 0.3, dv.wheel[w * 3 + 1]! - 0.2, dv.wheel[w * 3 + 2]! + (rnd() - 0.5) * 0.3, -dv.vel[0]! * 0.15 + (rnd() - 0.5), 0.5 + rnd() * 0.6, -dv.vel[2]! * 0.15 + (rnd() - 0.5), 0.5 + rnd() * 0.4, 0.08, 0.26);
         }
       }
       // The trail: each step the lights' newest point in; it shortens to nothing when the buggy stops.
-      const go = ph !== CRASH && (v.groundSpeed > 1.2 || v.air > 0), n = k * 2;
+      const go = ph !== CRASH && (dv.groundSpeed > 1.2 || dv.air > 0), n = k * 2;
       if (go) {
         const h = (TRN[n] = (TRN[n]! + 1) % TRAIL);
         for (let s = 0; s < 2; s++) {
-          const m = tails[k]![s]!.M, q = (k * TRAIL + h) * 6 + s * 3;
+          const m = v0.tails[k]![s]!.M, q = (k * TRAIL + h) * 6 + s * 3;
           TR[q] = m[9]! - m[0]! * 0.03; TR[q + 1] = m[10]! + 0.03; TR[q + 2] = m[11]! - m[6]! * 0.03;
         }
         TRN[n + 1] = Math.min(TRAIL, TRN[n + 1]! + 1);
       } else if (TRN[n + 1]! > 0) TRN[n + 1] = TRN[n + 1]! - 1;
       if (TRN[n + 1]! > 0) any = true;
     }
-    if (stepPool(dust, DV, dt, -0.4, 0.16, 0.24)) any = true;
-    if (stepPool(spark, SV, dt, 14, -0.05, 1)) any = true;
+    if (stepPool(v0.dust!, DV, dt, -0.4, 0.16, 0.24)) any = true;
+    if (stepPool(v0.spark!, SV, dt, 14, -0.05, 1)) any = true;
     return any;
   }
 
-  // ---- events from the race: stickers, sound, FX ----
+  // ---- events from the sim: stickers, sound, FX ----
+  /** The view following car c, or −1. */
+  const viewOf = (car: number) => (car === v0.car ? 0 : NV > 1 && views[1]!.car === car ? 1 : -1);
   function events() {
-    const C = race.C;
-    for (let k = 0; k < race.n; k++) {
-      const type = race.ev[k * 3]!, car = race.ev[k * 3 + 1]!, val = race.ev[k * 3 + 2]!, p = car * 3, you = car === VIEW.car;
+    const C = sim.C, race = isRace() ? rc() : null;
+    for (let k = 0; k < sim.n; k++) {
+      const type = sim.ev[k * 3]!, car = sim.ev[k * 3 + 1]!, val = sim.ev[k * 3 + 2]!, p = car * 3, vi = viewOf(car), you = vi >= 0, vw = views[vi]!;
       hudDirty = true;
-      if (type === E_COUNT) count("" + val), engine.events.emit("count");
-      else if (type === E_GO) count("GO!"), engine.events.emit("go"), say("Go");
-      else if (type === E_GATE && you) {
+      if (type === E_COUNT) countAll("" + val), engine.events.emit("count");
+      else if (type === E_GO) countAll("GO!"), engine.events.emit("go"), say("Go");
+      else if (type === E_GATE && you && race) {
         engine.events.emit("gate");
         flash = val;
         flashT = 0.25;
-        const m = gates[val]![2]!.M;
+        const m = vw.gates[val]![2]!.M;
         burst(m[9]!, m[10]! + 0.2, m[11]!, 12, 3);
-      } else if (type === E_LAP && you) {
-        const lt = race.R[1]! - 0, b = C[BEST]!;
+      } else if (type === E_LAP && you && race) {
+        const b = C[car * K + BEST]!;
         engine.events.emit("lap");
         flash = 0;
         flashT = 0.3;
         if (auto && mode === "demo") endDemo();
-        else toast(`LAP ${Math.min(race.laps, val + 1)} OF ${race.laps} · ${clock(b)}${b && b === lastLap() ? " BEST LAP" : ""}`, "go"), say(`Lap ${val + 1}`);
-        void lt;
+        else toast(vi, `LAP ${Math.min(race.laps, val + 1)} OF ${race.laps} · ${clock(b)}${b ? " BEST LAP" : ""}`, "go"), say(`Lap ${val + 1}`);
       } else if (type === E_LAND && you) {
-        const S = race.sc.S, clean = val === CLEAN;
+        const S = sim.scs[car]!.S, clean = val === CLEAN;
         engine.events.emit(clean ? "clean" : "sketchy");
-        toast(`${S[AIR]!.toFixed(2)}s AIR · ${clean ? "CLEAN" : "SKETCHY"} +${S[PTS]}${clean && S[CB]! > 1 ? ` · COMBO ×${S[CB]}` : ""}`, clean ? "clean" : "meh");
-        dustBurst(race.pos[p]!, race.pos[p + 1]! - 0.5, race.pos[p + 2]!, clean ? 8 : 14);
+        toast(vi, `${S[AIR]!.toFixed(2)}s AIR · ${clean ? "CLEAN" : "SKETCHY"} +${num(S[PTS]!)}${clean && S[CB]! > 1 ? ` · ×${1 + S[CB]!}` : ""}`, clean ? "clean" : "meh");
+        dustBurst(sim.pos[p]!, sim.pos[p + 1]! - 0.5, sim.pos[p + 2]!, clean ? 8 : 14);
+      } else if (type === E_XFER && you) {
+        const tb = fs().park.tables[val]!;
+        engine.events.emit("lap");
+        toast(vi, `TRANSFER · ${tb.name} +${num(C[car * K + XPTS]!)}`, "go");
+        say(`Transfer to ${tb.name.toLowerCase()}`);
+        burst(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, 18, 4);
+      } else if (type === E_COMBO && you) {
+        if (val > 1) toast(vi, val > 0 ? `COMBO ×${1 + val} BANKED` : `COMBO ×${1 - val} LOST`, val > 0 ? "drift" : "meh");
+        else if (val < -1) toast(vi, `COMBO ×${1 - val} LOST`, "meh");
       } else if (type === E_CRASH) {
-        burst(race.pos[p]!, race.pos[p + 1]!, race.pos[p + 2]!, you ? 26 : 12, 5);
-        dustBurst(race.pos[p]!, race.pos[p + 1]! - 0.4, race.pos[p + 2]!, you ? 20 : 8);
+        burst(sim.pos[p]!, sim.pos[p + 1]!, sim.pos[p + 2]!, you ? 26 : 12, 5);
+        dustBurst(sim.pos[p]!, sim.pos[p + 1]! - 0.4, sim.pos[p + 2]!, you ? 20 : 8);
         if (you) {
           engine.events.emit("crash");
-          shake = reduced ? 0 : 0.5;
-          toast(val ? "OFF THE TABLE!" : "WIPEOUT", "bad");
-          say(val ? "Off the table" : "Wipeout");
+          vw.shake = reduced ? 0 : 0.5;
+          toast(vi, val ? (race ? "OFF THE TABLE!" : "INTO THE GAP!") : "WIPEOUT", "bad");
+          say(val ? (race ? "Off the table" : "Into the gap") : "Wipeout");
         }
       } else if (type === E_RESPAWN && you) {
         engine.events.emit("respawn");
-        dropT = 0.45;
-        aim(true);
-        toast(val ? `BACK AT GATE ${val}` : "BACK AT THE START", "go");
-      } else if (type === E_BOOST && you) engine.events.emit("boost"), toast("BOOST", "boost");
-      else if (type === E_WRONG && you) toast("WRONG WAY", "bad"), say("Wrong way");
-      else if (type === E_DRIFT && you) engine.events.emit("clean"), toast(`DRIFT +${val}`, "drift"), say(`Drift, ${val} points`);
-      else if (type === E_DRIFT_LOST && you) toast(`DRIFT LOST −${val}`, "meh");
+        DROP[car] = 0.45;
+        aim(vw, true);
+        toast(vi, race ? (val ? `BACK AT GATE ${val}` : "BACK AT THE START") : `BACK ON ${fs().park.tables[val]!.name}`, "go");
+      } else if (type === E_BOOST && you) engine.events.emit("boost"), toast(vi, "BOOST", "boost");
+      else if (type === E_WRONG && you) toast(vi, "WRONG WAY", "bad"), say("Wrong way");
+      else if (type === E_DRIFT && you) engine.events.emit("clean"), toast(vi, `DRIFT +${num(val)}`, "drift"), say(`Drift, ${val} points`);
+      else if (type === E_DRIFT_LOST && you) toast(vi, `DRIFT LOST −${val}`, "meh");
       else if (type === E_SPIN) {
         engine.events.emit("bump");
-        burst(race.pos[p]!, race.pos[p + 1]! + 0.3, race.pos[p + 2]!, you ? 14 : 8, 3);
-        if (you) (shake = reduced ? 0 : 0.3), toast("SPUN OUT", "bad"), say("Spun out");
-      }
-      else if (type === E_BUMP) engine.events.emit("bump"), (shake = reduced ? 0 : Math.max(shake, 0.18));
+        burst(sim.pos[p]!, sim.pos[p + 1]! + 0.3, sim.pos[p + 2]!, you ? 14 : 8, 3);
+        if (you) (vw.shake = reduced ? 0 : 0.3), toast(vi, "SPUN OUT", "bad"), say("Spun out");
+      } else if (type === E_BUMP && you) engine.events.emit("bump"), (vw.shake = reduced ? 0 : Math.max(vw.shake, 0.18));
       else if (type === E_DONE) {
         if (mode === "demo") continue;
-        const place = race.C[PLACE]!;
-        engine.events.emit(place === 1 ? "win" : "lose");
-        burst(race.pos[0]!, race.pos[1]! + 1, race.pos[2]!, 30, 4);
+        const won = race ? C[v0.car * K + PLACE] === 1 : fs().winner() === v0.car;
+        engine.events.emit(won ? "win" : "lose");
+        burst(sim.pos[v0.car * 3]!, sim.pos[v0.car * 3 + 1]! + 1, sim.pos[v0.car * 3 + 2]!, 30, 4);
         cardAt = engine.time + 1.2;
         engine.busy(1.4);
-        say(`Finished ${ordinal(place)}`);
+        say(race ? `Finished ${ordinal(C[v0.car * K + PLACE]!)}` : "Time");
       }
     }
-    race.clear();
+    sim.clear();
   }
   const ordinal = (n: number) => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
-  const lastLap = () => race.C[BEST]!;
-  function toast(text: string, kind: string) {
-    if (mode === "demo") return;
-    toastEl.textContent = text;
-    toastEl.className = "dh-toast dh-" + kind;
-    toastEl.hidden = false;
-    toastT = 1.6;
+  function toast(vi: number, text: string, kind: string) {
+    if (mode === "demo" || vi < 0) return;
+    const v = views[vi]!;
+    v.toastEl.textContent = text;
+    v.toastEl.className = "dh-toast dh-" + kind;
+    v.toastEl.hidden = false;
+    v.toastT = 1.6;
   }
-  function count(text: string) {
+  function countAll(text: string) {
     if (mode === "demo") return;
-    countEl.textContent = text;
-    countEl.className = text === "GO!" ? "dh-count dh-go" : "dh-count";
-    countEl.hidden = false;
-    countT = text === "GO!" ? 0.8 : 1.1;
+    for (let i = 0; i < NV; i++) {
+      const v = views[i]!;
+      v.countEl.textContent = text;
+      v.countEl.className = text === "GO!" ? "dh-count dh-go" : "dh-count";
+      v.countEl.hidden = false;
+      v.countT = text === "GO!" ? 0.8 : 1.1;
+    }
   }
   let said = "";
   function say(s: string) {
@@ -554,36 +733,58 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
 
   // ---- the HUD ----
-  function hudWrite() {
-    const C = race.C, R = race.R, laps = race.laps, place = C[PLACE]!;
-    if (was[0] !== place) (was[0] = place), (posEl.textContent = "" + place);
-    const lap = Math.min(laps, C[LAP]! + 1);
-    if (was[1] !== lap) (was[1] = lap), (lapEl.textContent = `${lap}/${laps}`);
-    const tenths = Math.floor((R[0] === DONE && mode !== "demo" ? R[3]! : R[1]!) * 10);
-    if (was[2] !== tenths) (was[2] = tenths), (timeEl.textContent = clock(tenths / 10));
-    const b = C[BEST]!;
-    if (was[3] !== b) (was[3] = b), (bestEl.textContent = b ? "BEST " + clock(b) : "");
-    const sc = race.sc.S[SC]!;
-    if (was[4] !== sc) (was[4] = sc), (scoreEl.textContent = sc.toLocaleString("en-US"));
-    const cb = race.sc.S[CB]!;
-    if (was[5] !== cb) (was[5] = cb), (comboEl.textContent = "×" + (1 + cb)), comboEl.classList.toggle("dh-hot", cb > 0);
-    const n = Math.round(race.N[0]! * 40) / 40;
-    if (was[6] !== n) (was[6] = n), nitroBar.style.setProperty("--n", "" + n);
-    const on = race.N[1]! > 0 || C[BOOST]! > 0 ? 1 : 0;
-    if (was[7] !== on) (was[7] = on), nitroEl.classList.toggle("dh-on", !!on);
-    const dp = Math.round(C[DPTS]!), dOn = C[DTIME]! > 0.15 && dp > 0;
-    if (was[8] !== (dOn ? dp : -1)) (was[8] = dOn ? dp : -1), (driftEl.hidden = !dOn), (driftN.textContent = "" + dp);
-    const hint = mode === "race" && R[0] === COUNT ? (thePad.el.offsetParent ? "Hold GAS · steer left thumb · DRIFT into the bends · BOOST when the bar is full" : "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it") : "";
+  function hudWrite(v: View) {
+    const C = sim.C, R = sim.R, car = v.car, o = car * K, w = v.was, E = v.els, race = isRace() ? rc() : null, S = sim.scs[car]!.S;
+    const set = (i: number, val: number, fn: () => void) => w[i] !== val && ((w[i] = val), fn());
+    if (race) {
+      const place = C[o + PLACE]!;
+      set(0, place * 10 + sim.count, () => ((E[0]!.textContent = "" + place), (E[10]!.textContent = "/" + sim.count)));
+      const lap = Math.min(race.laps, C[o + LAP]! + 1);
+      set(1, lap * 100 + race.laps, () => ((E[1]!.textContent = `${lap}/${race.laps}`), (E[11]!.textContent = "LAP")));
+      const tenths = Math.floor((R[0] === DONE && mode !== "demo" ? R[3]! : R[1]!) * 10);
+      set(2, tenths, () => (E[2]!.textContent = clock(tenths / 10)));
+      const b = C[o + BEST]!;
+      set(3, b, () => (E[3]!.textContent = b ? "BEST " + clock(b) : ""));
+    } else {
+      const f = fs(), ti = C[o + FTABLE]!;
+      set(1, 1000 + ti, () => ((E[1]!.textContent = f.park.tables[ti]!.name), (E[11]!.textContent = "TABLE")));
+      // The jam's clock counts down; alone, the time chip holds this device's best.
+      const left = f.jam ? Math.max(0, f.jam - (R[0] === COUNT ? 0 : R[1]!)) : -1, tenths = left >= 0 ? Math.ceil(left * 10) : -1;
+      if (f.jam) set(2, tenths, () => (E[2]!.textContent = clock(tenths / 10)));
+      else set(2, -2 - freeBest, () => (E[2]!.textContent = "BEST " + num(freeBest)));
+      set(3, f.jam ? -5 : -6, () => (E[3]!.textContent = f.jam ? "LEFT" : ""));
+    }
+    const hidePos = !race;
+    if (E[12]!.hidden !== hidePos) E[12]!.hidden = hidePos;
+    const sc = S[SC]!;
+    if (!race && sim.humans === 1 && sc > freeBest) (freeBest = sc), store.set("best:freestyle", "" + sc);
+    set(4, sc, () => (E[4]!.textContent = num(sc)));
+    const cb = S[CB]!;
+    set(5, cb, () => ((E[5]!.textContent = "×" + (1 + cb)), E[5]!.classList.toggle("dh-hot", cb > 0)));
+    const n = Math.round(sim.N[car * 2]! * 40) / 40;
+    set(6, n, () => E[9]!.style.setProperty("--n", "" + n));
+    const on = sim.N[car * 2 + 1]! > 0 || C[o + BOOST]! > 0 ? 1 : 0;
+    set(7, on, () => E[8]!.classList.toggle("dh-on", !!on));
+    const dp = Math.round(C[o + DPTS]!), dOn = C[o + DTIME]! > 0.15 && dp > 0;
+    set(8, dOn ? dp : -1, () => ((E[6]!.hidden = !dOn), (E[7]!.textContent = "" + dp)));
+  }
+  function sharedHud() {
+    const R = sim.R, solo = NV === 1 && !net.on;
+    const hint = mode === "race" && solo && (R[0] === COUNT || (!isRace() && R[1]! < 6 && !moved)) ? (thePad.el.offsetParent ? "Hold GAS · steer left thumb · DRIFT into the bends · BOOST when the bar is full" : isRace() ? "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it" : "↑ gas straight off the ramp to jump to the next table · SHIFT drift · SPACE nitro · land flat for the combo") : "";
     if (hintEl.textContent !== hint) hintEl.textContent = hint;
     // The demo lap shows only the race (the page's copy sits over it); the menu only its card.
     const hideHead = mode === "menu" || mode === "demo";
-    if (headEl.hidden !== hideHead) (headEl.hidden = hideHead), (board.hidden = hideHead);
+    for (const v of views) if (v.head.hidden !== hideHead) v.head.hidden = hideHead;
+    const hideBoard = hideHead || !isRace() || NV > 1;
+    if (board.hidden !== hideBoard) board.hidden = hideBoard;
     if (keysEl.hidden !== (mode === "demo")) keysEl.hidden = mode === "demo";
     demoEl.hidden = mode !== "demo";
     // The demo lap has no pad (and the course takes the whole stage); a takeover brings it back.
     if (stage.hasAttribute("data-demo") !== (mode === "demo")) stage.toggleAttribute("data-demo", mode === "demo"), (V[0] = 1), engine.wake();
   }
   function boardWrite() {
+    if (!isRace()) return;
+    const race = rc();
     for (let k = race.count; k < rows.length; k++) rows[k]!.hidden = true;
     for (let k = 0; k < race.count; k++) {
       const car = race.rank[k]!, row = rows[k]!, C = race.C, o = car * K;
@@ -595,10 +796,25 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       (row.children[1] as HTMLElement).style.background = P.cars[car]![0]!;
       (row.children[2] as HTMLElement).textContent = race.name(car);
       (row.children[3] as HTMLElement).textContent = C[o + PH] === FIN ? "FIN" : `L${Math.min(race.laps, C[o + LAP]! + 1)}`;
-      row.classList.toggle("dh-you", car === 0);
+      row.classList.toggle("dh-you", car === v0.car);
     }
   }
   function menuWrite() {
+    for (const s of hud.querySelectorAll<HTMLElement>("[data-seg]")) {
+      const cur = s.dataset.seg === "mode" ? pick.mode : pick.players;
+      for (const b of s.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", "" + (b.dataset.v === cur));
+    }
+    const free = pick.mode === "free", two = pick.players !== "1";
+    tracksEl.hidden = free;
+    parkEl.hidden = !free;
+    $(".dh-m-rivals").hidden = free || !two;
+    const rk = $(".dh-rivk");
+    rk.textContent = pick.rivals ? "3 RIVALS" : "NO RIVALS";
+    rk.setAttribute("aria-pressed", "" + !!pick.rivals);
+    $(".dh-m-sub").textContent = free
+      ? pick.players === "1" ? `Four tables, no clock. Jump the ramps from table to table; air, transfers and drifts score, the combo multiplies. Best here: ${num(freeBest)}.` : "A three-minute jam on the four tables: the higher score wins."
+      : pick.players === "1" ? "Pick a track, then START. Three rivals, the clock, every jump and drift scored." : pick.players === "2" ? "Two on this screen: a view each. Pick a track, then START." : "Two screens over the internet: you need an invite code.";
+    $(".dh-start").textContent = pick.players === "net" ? "NEXT" : "START";
     tracksEl.innerHTML = "";
     TRACKS.forEach((d, i) => {
       const li = document.createElement("li"), b = document.createElement("button"), best = bestOf(d.id);
@@ -611,74 +827,124 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       li.append(b);
       tracksEl.append(li);
     });
-    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Steer with the left thumb; GAS, BRAKE, DRIFT and BOOST with the right." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
+    if (!parkEl.childElementCount)
+      parkEl.innerHTML = ["SALT FLATS", "THE BOWL", "DUNE SEA", "NEON YARD"].map((n, i) => `<li style="--c:var(--dh-t${i})"><b>${n}</b><small>${["Kicker line, tabletop, whoops, a drift ring", "A deep bowl, a spine, a hip", "Ridged dunes and a banked U-turn", "A rail, stair ledges, a funbox"][i]}</small></li>`).join("");
+    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Steer with the left thumb; GAS, BRAKE, DRIFT and BOOST with the right." : pick.players === "2" ? "P1: W A S D · left SHIFT drift · SPACE nitro. P2: arrows · right SHIFT drift · ENTER nitro. Gamepads work too." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
   }
   function showCard(which: HTMLElement | null) {
-    for (const el of [menu, pauseC, result]) el.hidden = el !== which;
+    for (const el of [menu, pauseC, result, roomC]) el.hidden = el !== which;
     hudDirty = dirty = true;
   }
   function showEnd() {
-    const C = race.C, R = race.R, place = C[PLACE]!, time = R[3]!, id = def.id, prev = bestOf(id);
-    newBest = place <= race.count && (!prev || time < prev) && race.fin[0]! > 0 && race.C[NEXT]! > race.gates * race.laps;
-    if (newBest) store.set("best:" + id, time.toFixed(2));
-    $(".dh-r-head").textContent = place === 1 ? "YOU WIN" : `FINISH · ${ordinal(place).toUpperCase()}`;
-    $(".dh-r-time").textContent = clock(time) + (newBest ? " · TRACK BEST" : prev ? ` · best ${clock(prev)}` : "");
-    const S = race.sc.S;
-    $(".dh-r-stats").textContent = `best lap ${C[BEST]! ? clock(C[BEST]!) : "—"} · ${S[SC]!.toLocaleString("en-US")} stunt pts · best air ${S[SBEST]!.toFixed(2)}s · ${S[CLEANS]} clean · top combo ×${1 + S[TOP]!}`;
-    const list = $(".dh-results");
+    const C = sim.C, R = sim.R, me = v0.car, list = $(".dh-results");
     list.innerHTML = "";
-    for (let k = 0; k < race.count; k++) {
-      const car = race.order[k]! >= 0 ? race.order[k]! : race.rank[k]!, li = document.createElement("li"), ft = race.fin[car]!;
-      li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span>${race.name(car)}</span><span>${ft ? clock(ft) : "RACING"}</span>`;
-      if (!car) li.className = "dh-you";
-      list.append(li);
+    const again = $(".dh-r-again"), next = $(".dh-r-next");
+    again.textContent = net.on ? "REMATCH" : isRace() ? "RACE AGAIN" : "PLAY AGAIN";
+    next.hidden = net.on || !isRace();
+    if (isRace()) {
+      const race = rc(), place = C[me * K + PLACE]!, time = R[3]!, id = def.id, prev = bestOf(id), solo = race.humans === 1;
+      newBest = solo && place <= race.count && (!prev || time < prev) && race.fin[me]! > 0 && C[me * K + NEXT]! > race.gates * race.laps;
+      if (newBest) store.set("best:" + id, time.toFixed(2));
+      let head = place === 1 ? "YOU WIN" : `FINISH · ${ordinal(place).toUpperCase()}`;
+      if (race.humans > 1) {
+        const p1 = C[PLACE]!, p2 = C[K + PLACE]!, w = p1 < p2 ? 0 : 1;
+        const wp = C[w * K + PLACE]!;
+        head = (net.on && w === me ? "YOU WIN" : `P${w + 1} WINS`) + (wp > 1 ? ` · ${ordinal(wp).toUpperCase()}` : "");
+      }
+      $(".dh-r-head").textContent = head;
+      $(".dh-r-time").textContent = clock(time) + (newBest ? " · TRACK BEST" : solo && prev ? ` · best ${clock(prev)}` : "");
+      const S = race.scs[me]!.S;
+      $(".dh-r-stats").textContent = `best lap ${C[me * K + BEST]! ? clock(C[me * K + BEST]!) : "—"} · ${num(S[SC]!)} stunt pts · best air ${S[SBEST]!.toFixed(2)}s · ${S[CLEANS]} clean · top combo ×${1 + S[TOP]!}`;
+      for (let k = 0; k < race.count; k++) {
+        const car = race.order[k]! >= 0 ? race.order[k]! : race.rank[k]!, li = document.createElement("li"), ft = race.fin[car]!;
+        li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span>${race.name(car)}</span><span>${ft ? clock(ft) : "RACING"}</span>`;
+        if (car < race.humans) li.className = "dh-you";
+        list.append(li);
+      }
+      say(`Finished ${ordinal(place)} in ${clock(time)}`);
+      if (solo && !net.on) o.onEnd?.({ track: id, place, time, bestLap: C[me * K + BEST]!, score: S[SC]!, best: newBest });
+    } else {
+      const f = fs(), w = f.winner();
+      $(".dh-r-head").textContent = w < 0 ? "A DRAW" : net.on ? (w === me ? "YOU WIN" : `P${w + 1} WINS`) : `P${w + 1} WINS`;
+      $(".dh-r-time").textContent = `${num(f.scs[0]!.S[SC]!)} · ${num(f.scs[1]?.S[SC] ?? 0)}`;
+      $(".dh-r-stats").textContent = "Freestyle jam · three minutes on the four tables";
+      for (let k = 0; k < f.count; k++) {
+        const S = f.scs[k]!.S, li = document.createElement("li");
+        li.innerHTML = `<b>P${k + 1}</b><i style="background:${P.cars[k]![0]}"></i><span>${num(S[SC]!)} · ${f.C[k * K + XFERS]} transfers · best air ${S[SBEST]!.toFixed(2)}s · ×${1 + S[TOP]!}</span><span>${k === w ? "WIN" : ""}</span>`;
+        li.className = k === me ? "dh-you" : "";
+        list.append(li);
+      }
+      say(w < 0 ? "A draw" : `Player ${w + 1} wins`);
     }
     showCard(result);
-    setView(0);
-    say(`Finished ${ordinal(place)} in ${clock(time)}`);
-    ($(".dh-r-again") as HTMLButtonElement).focus({ preventScroll: true });
-    o.onEnd?.({ track: id, place, time, bestLap: C[BEST]!, score: S[SC]!, best: newBest });
+    for (const v of views) setView(v, 0);
+    (again as HTMLButtonElement).focus({ preventScroll: true });
   }
 
   // ---- flow ----
-  function loadTrack(id: string) {
+  /** Make the sim for these settings (a new one only when something changed). */
+  function setup(m: "race" | "free", humans: number, rivals: number, id: string) {
     const d = trackById(id);
-    if (d === def) return;
+    if (want.mode === m && want.humans === humans && want.rivals === rivals && (m === "free" || d === def)) return;
     def = d;
-    race = createRace(def, o.seed ?? 1);
+    (want.mode = m), (want.humans = humans), (want.rivals = rivals);
+    sim = m === "free" ? createFreestyle(o.seed ?? 1, { humans }) : createRace(def, o.seed ?? 1, { humans, rivals: humans > 1 ? rivals : 3, laps: want.laps });
     P = pal();
     stage.toggleAttribute("data-day", !P.night);
-    buildScene();
+    stage.toggleAttribute("data-free", m === "free");
+    stage.toggleAttribute("data-solo", humans === 1);
+    TRN.fill(0);
+    buildAll();
     V[0] = 1;
   }
-  function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0)) {
-    loadTrack(id);
-    race.reset(seed);
+  /** One view, or two side by side (stacked on a tall stage). */
+  function setSplit(on: boolean) {
+    const n = on ? 2 : 1;
+    if (n === NV && (!on || views[1])) return;
+    if (on && !views[1]) {
+      makeView(1);
+      buildScene(views[1]!);
+    }
+    if (on && !pad2) pad2 = padOf(c2, views[1]!.el);
+    NV = n;
+    if (views[1]) views[1].el.hidden = !on;
+    stage.toggleAttribute("data-split", on);
+    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
+    V[0] = 1;
+  }
+  let moved = false;
+  function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0), fresh = true) {
+    if (fresh) {
+      const humans = net.on ? 2 : pick.players === "2" ? 2 : 1;
+      setup(net.on ? net.pick.mode : pick.mode, humans, net.on ? net.pick.rivals : pick.rivals, id);
+      setSplit(!net.on && humans > 1);
+      sim.reset(seed);
+    }
+    v0.car = net.on ? net.seat : 0;
+    if (views[1]) views[1].car = 1;
     V[0] = 1;
     mode = auto && o.attract ? "demo" : "race";
     paused = false;
-    if (mode === "demo") race.R[2] = 0.05;
+    moved = false;
+    if (mode === "demo") sim.R[2] = 0.05;
     cardAt = -1;
-    dust.n = spark.n = 0;
+    for (const v of views) if (v.dust) (v.dust.n = 0), (v.spark!.n = 0);
     TRN.fill(0);
-    shake = dropT = 0;
+    DROP.fill(0);
+    for (const v of views) (v.shake = 0), v.was.fill(-1), (v.countEl.hidden = true), (v.toastEl.hidden = true);
     flash = -1;
     showCard(null);
-    countEl.hidden = true;
-    was.fill(-1);
     for (const r of rows) r.dataset.k = "";
-    setView(1);
-    aim(mode === "demo" || reduced);
+    for (const v of views) setView(v, 1), paintGates(v), pose(v);
+    for (const v of views) aim(v, mode === "demo" || reduced);
     hudDirty = dirty = true;
-    paintGates();
-    pose();
     engine.busy(2);
     engine.wake();
     if (!dropIn || mode === "race") play.focus({ preventScroll: true });
   }
   /** The menu's pick: the preview on the table changes; START races it. */
   function selectTrack(id: string) {
-    loadTrack(id);
+    setup("race", 1, 3, id);
     for (const b of tracksEl.querySelectorAll<HTMLElement>("button")) {
       const on = b.dataset.track === def.id;
       b.setAttribute("aria-pressed", "" + on);
@@ -689,77 +955,87 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     engine.wake();
   }
   function showMenu() {
+    if (net.on) net.end(false);
     mode = "menu";
     V[0] = 1;
     paused = false;
+    setSplit(false);
+    setup(pick.mode, 1, 3, def.id);
+    v0.car = 0;
     menuWrite();
     showCard(menu);
-    setView(0);
+    setView(v0, 0);
     engine.wake();
     (tracksEl.querySelector("[aria-current]") as HTMLElement | null)?.focus({ preventScroll: true });
   }
   function endDemo() {
     // The demo lap is over: everyone eases off and stops; tap to race.
-    race.finish();
+    sim.finish();
     demoEl.textContent = "TAP TO RACE";
   }
   function takeOver() {
     if (mode === "menu") return;
     if (mode === "demo") {
       auto = false;
-      if (race.R[0] === DONE) return startRace(def.id);
+      if (sim.R[0] === DONE) return startRace(def.id);
       mode = "race";
-      toast("YOU HAVE IT", "go");
+      toast(0, "YOU HAVE IT", "go");
       hudDirty = true;
     }
   }
   function setPaused(on: boolean) {
-    if (mode === "menu" || (on && race.R[0] === DONE) || paused === on) return;
+    if (mode === "menu" || (on && sim.R[0] === DONE) || paused === on) return;
     paused = on;
-    if (on) ($(".dh-p-sub") as HTMLElement).textContent = `${def.name} · lap ${Math.min(race.laps, race.C[LAP]! + 1)} of ${race.laps} · ${clock(race.R[1]!)}`;
+    if (on) {
+      const race = isRace() ? rc() : null;
+      $(".dh-p-sub").textContent = race ? `${def.name} · lap ${Math.min(race.laps, sim.C[v0.car * K + LAP]! + 1)} of ${race.laps} · ${clock(sim.R[1]!)}` : `Freestyle · ${num(sim.scs[v0.car]!.S[SC]!)} points`;
+      $(".dh-p-sub").textContent += net.on ? " · online: the race runs on" : "";
+      $(".dh-restart").hidden = net.on;
+      $(".dh-totracks").textContent = net.on ? "LEAVE" : "MENU";
+    }
     showCard(on ? pauseC : null);
     PD[0] = 0;
-    c.press("gas", false), c.press("brake", false), c.press("left", false), c.press("right", false), c.press("nitro", false), c.press("drift", false);
+    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
     if (on) ($(".dh-resume") as HTMLButtonElement).focus({ preventScroll: true });
     else play.focus({ preventScroll: true });
     engine.wake();
   }
 
   // ---- the camera: chase (behind your buggy) or the whole table ----
-  function frameTable() {
-    const tr = race.tr, HX = tr.HX, HZ = tr.HZ, top = P.city ? 8 : 2.6;
+  function frameTable(v: View) {
+    const HX = sim.HX, HZ = sim.HZ, top = P.city ? 8 : 2.6, d = v.d, TABLE = v.TABLE;
     const pts = [-HX - 0.4, -1.1, -HZ - 0.4, HX + 0.4, -1.1, -HZ - 0.4, -HX - 0.4, -1.1, HZ + 0.4, HX + 0.4, -1.1, HZ + 0.4, -HX, top, -HZ, HX, top, -HZ];
-    const W = dio.width, H = dio.height, tall = H / W > 0.75;
+    const W = d.width, H = d.height, tall = H / W > 0.75;
     TABLE.yaw = tall ? -0.5 : 0;
     TABLE.pitch = tall ? 0.95 : 0.82;
     TABLE.dist = 30;
     TABLE.tx = TABLE.ty = TABLE.ox = TABLE.oy = 0;
     TABLE.tz = 0.4;
-    // On a wide stage the track menu sits on the left: the preview takes the right.
+    // On a wide stage the menu sits on the left: the preview takes the right.
     const left = mode === "menu" && W > 900 ? Math.min(W * 0.46, 600) : 8;
-    dio.fit(TABLE, pts, { x0: left, y0: V[2]!, x1: W - 8, y1: H - V[3]! });
-    chaseO.dist = tall ? 17.5 : 14;
-    chaseO.pitch = tall ? 0.7 : 0.55;
+    d.fit(TABLE, pts, { x0: left, y0: v.safe[0]!, x1: W - 8, y1: H - v.safe[1]! });
+    v.chaseO.dist = tall ? 17.5 : 14;
+    v.chaseO.pitch = tall ? 0.7 : 0.55;
   }
-  /** The chase target: your buggy (clamped to the table's edge when it goes over). */
-  function aim(snap: boolean) {
-    const tr = race.tr, c = VIEW.car, v = race.cars[c]!, p = c * 3;
-    target.yaw = race.C[c * K + PH] === CRASH ? target.yaw : v.yaw;
-    CTP[0] = Math.max(-tr.HX - 1, Math.min(tr.HX + 1, race.pos[p]!));
-    CTP[1] = Math.max(-1, race.pos[p + 1]!);
-    CTP[2] = Math.max(-tr.HZ - 1, Math.min(tr.HZ + 1, race.pos[p + 2]!));
-    VEL[0] = v.vel[0]!; VEL[2] = v.vel[2]!;
-    if (snap) chaseO.snap = true, chase(dio.cam, target, chaseO, 1 / 60), (chaseO.snap = false);
+  /** The chase target: the view's buggy (clamped to the table's edge when it goes over). */
+  function aim(v: View, snap: boolean) {
+    const c0 = v.car, dv = sim.cars[c0]!, p = c0 * 3, HX = sim.HX, HZ = sim.HZ;
+    v.target.yaw = sim.C[c0 * K + PH] === CRASH ? v.target.yaw : dv.yaw;
+    v.CTP[0] = Math.max(-HX - 1, Math.min(HX + 1, sim.pos[p]!));
+    v.CTP[1] = Math.max(-1, sim.pos[p + 1]!);
+    v.CTP[2] = Math.max(-HZ - 1, Math.min(HZ + 1, sim.pos[p + 2]!));
+    v.VEL[0] = dv.vel[0]!; v.VEL[2] = dv.vel[2]!;
+    if (snap) (v.chaseO.snap = true), chase(v.d.cam, v.target, v.chaseO, 1 / 60), (v.chaseO.snap = false);
   }
-  function stepCam(dt: number) {
-    const cam = dio.cam;
+  function stepCam(v: View, dt: number) {
+    const cam = v.d.cam;
     if (view) {
-      aim(false);
+      aim(v, false);
       // The demo drifts the camera round a little (the attract lap's showreel).
-      chaseO.side = mode === "demo" && !reduced ? 0.42 * Math.sin(engine.time * 0.21) : 0;
-      chaseO.snap = reduced;
+      v.chaseO.side = mode === "demo" && !reduced ? 0.42 * Math.sin(engine.time * 0.21) : 0;
+      v.chaseO.snap = reduced;
       // On a wide hero the demo sits right of centre, clear of the page's copy on the left.
-      const m = chase(cam, target, chaseO, dt), k = 1 - Math.exp(-4 * dt), ox = mode === "demo" && dio.width > 760 ? dio.width * 0.2 : 0;
+      const m = chase(cam, v.target, v.chaseO, dt), k = 1 - Math.exp(-4 * dt), ox = mode === "demo" && v.d.width > 760 ? v.d.width * 0.2 : 0;
       cam.ox += (ox - cam.ox) * k;
       cam.oy -= cam.oy * k;
       return m || Math.abs(cam.ox - ox) + Math.abs(cam.oy) > 0.2;
@@ -767,15 +1043,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     const k = reduced ? 1 : 1 - Math.exp(-2.6 * dt);
     let moving = false;
     for (const key of CAMK) {
-      let d = TABLE[key] - cam[key];
+      let d = v.TABLE[key] - cam[key];
       if (key === "yaw") d -= TAU * Math.floor(d / TAU + 0.5);
       if (Math.abs(d) > 1e-3) (cam[key] += d * k), (moving = true);
-      else cam[key] = TABLE[key];
+      else cam[key] = v.TABLE[key];
     }
     return moving;
   }
   const CAMK = ["yaw", "pitch", "dist", "tx", "ty", "tz", "ox", "oy", "fov"] as const;
-  function setView(n: number) {
+  function setView(_v: View, n: number) {
     view = n;
     viewK.textContent = n ? "CHASE" : "TABLE";
     dirty = true;
@@ -784,15 +1060,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
 
   // ---- drawing extras: the sky, contour lines and track edges, trails, gate glows, the overlay ----
-  function paintSky(ctx: CanvasRenderingContext2D) {
-    const W = dio.width, H = dio.height;
-    if (!sky) {
-      sky = ctx.createLinearGradient(0, 0, 0, H);
-      sky.addColorStop(0, P.sky0);
-      sky.addColorStop(0.55, P.sky1);
-      sky.addColorStop(1, P.sky2);
+  function paintSky(ctx: CanvasRenderingContext2D, v: View) {
+    const W = v.d.width, H = v.d.height;
+    if (!v.sky) {
+      v.sky = ctx.createLinearGradient(0, 0, 0, H);
+      v.sky.addColorStop(0, P.sky0);
+      v.sky.addColorStop(0.55, P.sky1);
+      v.sky.addColorStop(1, P.sky2);
     }
-    ctx.fillStyle = sky;
+    ctx.fillStyle = v.sky;
     ctx.fillRect(0, 0, W, H);
     if (P.night) {
       ctx.fillStyle = P.star;
@@ -817,49 +1093,52 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     for (let k = 0; k < 5; k++) ctx.fillRect(x - r, y + r * (0.1 + k * 0.19), r * 2, r * (0.03 + k * 0.025));
     ctx.restore();
   }
-  function seg(ctx: CanvasRenderingContext2D, ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
-    if (!dio.project(ax, ay, az, tmp) || tmp[2]! < 0.5 || !dio.project(bx, by, bz, tmp2) || tmp2[2]! < 0.5) return false;
+  function seg(d: Diorama, ctx: CanvasRenderingContext2D, ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
+    if (!d.project(ax, ay, az, tmp) || tmp[2]! < 0.5 || !d.project(bx, by, bz, tmp2) || tmp2[2]! < 0.5) return false;
     ctx.moveTo(tmp[0]!, tmp[1]!);
     ctx.lineTo(tmp2[0]!, tmp2[1]!);
     return true;
   }
-  /** Contour lines (one path per level), the jump lips, the pads' chevrons, then the track's edges
-   *  (each run of segments one stroke, wider near the camera). */
-  function paintLines(ctx: CanvasRenderingContext2D) {
+  /** Contour lines (one path per level), the jump lips, the pads' chevrons, then the track's (or the
+   *  tables') edges (each run of segments one stroke, wider near the camera). */
+  function paintLines(ctx: CanvasRenderingContext2D, v: View) {
+    const d = v.d;
     ctx.lineCap = "round";
     ctx.lineWidth = P.night ? 1.3 : 1;
     for (let l = 0; l < LINES.length; l++) {
       const S = LINES[l]!;
       ctx.beginPath();
-      for (let k = 0; k < S.length; k += 6) seg(ctx, S[k]!, S[k + 1]!, S[k + 2]!, S[k + 3]!, S[k + 4]!, S[k + 5]!);
+      for (let k = 0; k < S.length; k += 6) seg(d, ctx, S[k]!, S[k + 1]!, S[k + 2]!, S[k + 3]!, S[k + 4]!, S[k + 5]!);
       ctx.strokeStyle = P.lines[l]!;
       ctx.globalAlpha = P.lineA[l]!;
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    const tr = race.tr, t = race.t, f = dio.focal(), half = TRACK_W / 2 - 0.15;
+    const t = sim.t, f = d.focal(), race = isRace() ? rc() : null;
     // Jump lips: a bright bar across the top of each kicker.
     ctx.strokeStyle = P.lip;
-    for (let k = 0; k < tr.ramps.length; k += 4) {
-      const p = tr.paths[tr.ramps[k]!]!, i = ((tr.ramps[k + 2]! % p.n) + p.n) % p.n, x = p.P[i * 2]!, z = p.P[i * 2 + 1]!, nx = -p.T[i * 2 + 1]! * half, nz = p.T[i * 2]! * half;
+    const LP = sim.LIPS;
+    for (let k = 0; k < LP.length; k += 4) {
+      const ax = LP[k]!, az = LP[k + 1]!, bx = LP[k + 2]!, bz = LP[k + 3]!;
       ctx.beginPath();
-      if (!seg(ctx, x - nx, t.height(x - nx, z - nz) + 0.06, z - nz, x + nx, t.height(x + nx, z + nz) + 0.06, z + nz)) continue;
+      if (!seg(d, ctx, ax, t.height(ax, az) + 0.06, az, bx, t.height(bx, bz) + 0.06, bz)) continue;
       ctx.lineWidth = Math.max(2, (f * 0.16) / tmp[2]!);
       ctx.stroke();
     }
-    // Boost pads: a lit plate on the track, three chevrons pointing along the line.
+    // Boost pads: a lit plate on the ground, three chevrons pointing the way it pushes.
     ctx.lineJoin = "round";
-    for (let k = 0; k < tr.PADS.length; k += 2) {
-      const p = tr.paths[tr.PADS[k]!]!, i = tr.PADS[k + 1]!, x = p.P[i * 2]!, z = p.P[i * 2 + 1]!, tx = p.T[i * 2]!, tz = p.T[i * 2 + 1]!, y = t.height(x, z) + 0.05;
-      if (!dio.project(x, y, z, tmp) || tmp[2]! < 0.5) continue;
-      const L = tr.PAD_LEN / 2, Wd = tr.PAD_W;
+    const PV = sim.PADV;
+    for (let k = 0; k < PV.length; k += 4) {
+      const x = PV[k]!, z = PV[k + 1]!, tx = PV[k + 2]!, tz = PV[k + 3]!, y = t.height(x, z) + 0.05;
+      if (!d.project(x, y, z, tmp) || tmp[2]! < 0.5) continue;
+      const Lh = sim.PAD_LEN / 2, Wd = sim.PAD_W;
       ctx.fillStyle = P.pad;
       ctx.strokeStyle = P.chev;
       ctx.lineWidth = Math.max(1.5, (f * 0.06) / tmp[2]!);
       ctx.beginPath();
       for (let q = 0; q < 4; q++) {
-        const a = q === 0 || q === 3 ? -L : L, w = q < 2 ? -Wd : Wd, px = x + tx * a - tz * w, pz = z + tz * a + tx * w;
-        dio.project(px, t.height(px, pz) + 0.05, pz, tmp2);
+        const a = q === 0 || q === 3 ? -Lh : Lh, w = q < 2 ? -Wd : Wd, px = x + tx * a - tz * w, pz = z + tz * a + tx * w;
+        d.project(px, t.height(px, pz) + 0.05, pz, tmp2);
         q ? ctx.lineTo(tmp2[0]!, tmp2[1]!) : ctx.moveTo(tmp2[0]!, tmp2[1]!);
       }
       ctx.closePath();
@@ -871,33 +1150,53 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       const cw = Wd * 0.62;
       for (let s = -1; s <= 1; s++) {
         const cx = x + tx * s * 0.95, cz = z + tz * s * 0.95;
-        dio.project(cx - tx * 0.5 - tz * cw, y, cz - tz * 0.5 + tx * cw, tmp);
+        d.project(cx - tx * 0.5 - tz * cw, y, cz - tz * 0.5 + tx * cw, tmp);
         ctx.moveTo(tmp[0]!, tmp[1]!);
-        dio.project(cx + tx * 0.5, y, cz + tz * 0.5, tmp);
+        d.project(cx + tx * 0.5, y, cz + tz * 0.5, tmp);
         ctx.lineTo(tmp[0]!, tmp[1]!);
-        dio.project(cx - tx * 0.5 + tz * cw, y, cz - tz * 0.5 - tx * cw, tmp);
+        d.project(cx - tx * 0.5 + tz * cw, y, cz - tz * 0.5 - tx * cw, tmp);
         ctx.lineTo(tmp[0]!, tmp[1]!);
       }
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    // The Salt Flats' drift ring: a neon circle to slide round.
+    if (!race) {
+      const [rx, rz, rr] = fs().park.ring as [number, number, number];
+      ctx.strokeStyle = P.ledge;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      let on = false;
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * TAU, x = rx + Math.cos(a) * rr, z = rz + Math.sin(a) * rr;
+        if (!d.project(x, t.height(x, z) + 0.05, z, tmp) || tmp[2]! < 0.5) {
+          on = false;
+          continue;
+        }
+        on ? ctx.lineTo(tmp[0]!, tmp[1]!) : ctx.moveTo(tmp[0]!, tmp[1]!);
+        on = true;
+      }
+      ctx.lineWidth = Math.max(2, (f * 0.22) / Math.max(1, tmp[2]!));
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     // Two passes: a shoulder in the track's colour over the painted faces' saw-toothed edge (the road is
-    // painted per triangle), then the neon line on it.
-    for (let pass = 0; pass < 2; pass++) {
-      ctx.strokeStyle = pass ? P.edge : P.track;
+    // painted per triangle), then the neon line on it. The park strokes each table's edge in its colour.
+    for (let pass = race ? 0 : 1; pass < 2; pass++) {
       const wk = pass ? 0.2 : 0.62;
       for (let pi = 0; pi < EDGES.length; pi++) {
-        const E = EDGES[pi]!, n = E.length / 6, closed = pi === 0;
-        for (let side = 0; side < 2; side++) {
+        ctx.strokeStyle = pass ? (race ? P.edge : P.tables[pi]!) : P.track;
+        const E = EDGES[pi]!, n = race ? E.length / 6 : E.length / 3, closed = !race || pi === 0, sides = race ? 2 : 1;
+        for (let side = 0; side < sides; side++) {
           let w = -1;
           for (let i = 0; i < (closed ? n : n - 1); i++) {
             const a = side * n * 3 + i * 3, b = side * n * 3 + ((i + 1) % n) * 3;
-            if (!dio.project(E[a]!, E[a + 1]!, E[a + 2]!, tmp) || tmp[2]! < 0.5 || !dio.project(E[b]!, E[b + 1]!, E[b + 2]!, tmp2) || tmp2[2]! < 0.5) {
+            if (!d.project(E[a]!, E[a + 1]!, E[a + 2]!, tmp) || tmp[2]! < 0.5 || !d.project(E[b]!, E[b + 1]!, E[b + 2]!, tmp2) || tmp2[2]! < 0.5) {
               if (w > 0) ctx.stroke(), (w = -1);
               continue;
             }
             // Skip the stretch of a branch's edge inside the loop's track (at the joins).
-            if (pi && race.t.kindAt((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2) === KIND_TRACK && tr.near((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2)[1] === 0 && tr.NR[0]! < TRACK_W / 2 - 0.2) continue;
+            if (race && pi && t.kindAt((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2) === KIND_TRACK && race.tr.near((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2)[1] === 0 && race.tr.NR[0]! < TRACK_W / 2 - 0.2) continue;
             const lw = Math.max(1, Math.round(((f * wk) / tmp[2]!) * 2) / 2);
             if (lw !== w) {
               if (w > 0) ctx.stroke();
@@ -913,14 +1212,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
   }
   /** A car's tail-light trail: two lines, fading toward the tail end. */
-  function paintTrail(ctx: CanvasRenderingContext2D, k: number) {
+  function paintTrail(ctx: CanvasRenderingContext2D, v: View, k: number) {
     const n = TRN[k * 2 + 1]!;
     if (n < 2) return;
+    const d = v.d;
     ctx.strokeStyle = k ? P.cars[k]![0]! : P.tail;
     ctx.lineCap = "butt";
     ctx.lineJoin = "round";
     if (P.night) ctx.globalCompositeOperation = "lighter";
-    const f = dio.focal(), Cn = 4;
+    const f = d.focal(), Cn = 4, mine = k === v.car;
     for (let s = 0; s < 2; s++)
       for (let cI = 0; cI < Cn; cI++) {
         const s0 = Math.floor(((n - 1) * cI) / Cn), s1 = Math.floor(((n - 1) * (cI + 1)) / Cn);
@@ -928,32 +1228,32 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         ctx.beginPath();
         for (let q = s0; q <= s1; q++) {
           const a = (k * TRAIL + ((TRN[k * 2]! - q + TRAIL) % TRAIL)) * 6 + s * 3;
-          if (!dio.project(TR[a]!, TR[a + 1]!, TR[a + 2]!, tmp) || tmp[2]! < 0.5) continue;
+          if (!d.project(TR[a]!, TR[a + 1]!, TR[a + 2]!, tmp) || tmp[2]! < 0.5) continue;
           if (!started) (w = Math.max(1, (f * 0.09) / tmp[2]!)), ctx.moveTo(tmp[0]!, tmp[1]!), (started = true);
           else ctx.lineTo(tmp[0]!, tmp[1]!);
         }
-        ctx.globalAlpha = (k ? 0.6 : 0.95) * (1 - cI / Cn);
+        ctx.globalAlpha = (mine ? 0.95 : 0.6) * (1 - cI / Cn);
         ctx.lineWidth = w * (1 - (cI / Cn) * 0.6);
         ctx.stroke();
       }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
   }
-  function glow(ctx: CanvasRenderingContext2D, g: number) {
-    if (!P.night) return;
-    const on = mode !== "menu" && race.R[0] !== DONE && g === race.C[NEXT]! % race.gates;
+  function glow(ctx: CanvasRenderingContext2D, v: View, g: number) {
+    if (!P.night || !isRace()) return;
+    const race = rc(), on = mode !== "menu" && race.R[0] !== DONE && g === race.C[v.car * K + NEXT]! % race.gates;
     if (!on && flash !== g) return;
-    const m = gates[g]![2]!.M, w = (TRACK_W + 1.1) / 2;
+    const d = v.d, m = v.gates[g]![2]!.M, w = (TRACK_W + 1.1) / 2;
     const ax = m[9]! - m[2]! * w, az = m[11]! - m[8]! * w, bx = m[9]! + m[2]! * w, bz = m[11]! + m[8]! * w, y0 = m[10]! - 2.5, y1 = m[10]! + 0.16;
-    if (!dio.project(ax, y0, az, tmp) || !dio.project(bx, y0, bz, tmp2)) return;
+    if (!d.project(ax, y0, az, tmp) || !d.project(bx, y0, bz, tmp2)) return;
     ctx.beginPath();
     ctx.moveTo(tmp[0]!, tmp[1]!);
-    dio.project(ax, y1, az, tmp);
+    d.project(ax, y1, az, tmp);
     ctx.lineTo(tmp[0]!, tmp[1]!);
-    dio.project(bx, y1, bz, tmp);
+    d.project(bx, y1, bz, tmp);
     ctx.lineTo(tmp[0]!, tmp[1]!);
     ctx.lineTo(tmp2[0]!, tmp2[1]!);
-    const k = dio.focal() / Math.max(1, tmp2[2]!), a = on ? 0.5 + 0.25 * Math.sin(pulse * 6) : 0.8;
+    const k = d.focal() / Math.max(1, tmp2[2]!), a = on ? 0.5 + 0.25 * Math.sin(pulse * 6) : 0.8;
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = flash === g ? P.check : P.gNext;
     ctx.lineJoin = "round";
@@ -989,42 +1289,55 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     ctx.textBaseline = "middle";
     ctx.fillText(label, x, y - h / 2 + 0.5);
   }
-  function drawOverlay(ctx: CanvasRenderingContext2D) {
-    if (mode === "menu") return;
-    const R = race.R, tr = race.tr, f = dio.focal();
-    // Rival tags over their buggies (chase view, near enough to read).
-    if (view)
-      for (let k = 1; k < race.count; k++) {
-        const p = k * 3;
-        if (!dio.project(race.pos[p]!, race.pos[p + 1]! + 1.3, race.pos[p + 2]!, tmp) || tmp[2]! < 2 || tmp[2]! > 34) continue;
-        sticker(ctx, tmp[0]!, tmp[1]!, race.name(k), P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
-      }
-    // The shortcut's sign where a branch leaves the loop.
-    for (let b = 1; b < tr.paths.length; b++) {
-      const p = tr.paths[b]!, i = Math.min(p.n - 1, 4), x = p.P[i * 2]!, z = p.P[i * 2 + 1]!;
-      if (!dio.project(x, race.t.height(x, z) + 1.6, z, tmp) || tmp[2]! < 1 || tmp[2]! > 40) continue;
-      sticker(ctx, tmp[0]!, tmp[1]!, p.label, P.lip, P.ink, Math.max(0.7, Math.min(1.1, f / tmp[2]! / 26)));
-    }
-    if (R[0] !== DONE) {
-      const g = race.C[NEXT]! % race.gates, m = gates[g]![2]!.M;
-      if (dio.project(m[9]!, m[10]! + 1.05, m[11]!, tmp) && tmp[1]! > V[2]! - 4) {
-        const last = race.C[NEXT]! >= race.gates * race.laps;
-        sticker(ctx, tmp[0]!, tmp[1]!, g ? "" + g : last ? "FINISH" : "LAP", P.gNext, P.night ? P.ink : "#ffffff", Math.max(0.7, Math.min(1.25, f / Math.max(1, tmp[2]!) / 30)));
-      }
-    }
-    if (mode !== "demo") minimap(ctx);
-  }
-  /** The minimap: the loop and its branches, the gates to come, every buggy (yours ringed). */
-  function minimap(ctx: CanvasRenderingContext2D) {
-    const tr = race.tr, W = dio.width, H = dio.height, narrow = W < 560;
-    if (!MB[5]) {
-      const bw = narrow ? 104 : 172, s = bw / (tr.HX * 2), bh = tr.HZ * 2 * s;
-      MB[0] = W - bw - (narrow ? 10 : 14); MB[1] = H - bh - (narrow ? 10 : 14); MB[2] = s; MB[3] = bw; MB[4] = bh; MB[5] = 1;
-      MAP = tr.paths.map((p) => {
-        const out = new Float64Array(p.n * 2);
-        for (let i = 0; i < p.n; i++) (out[i * 2] = MB[0]! + (p.P[i * 2]! + tr.HX) * s), (out[i * 2 + 1] = MB[1]! + (p.P[i * 2 + 1]! + tr.HZ) * s);
-        return out;
+  function drawOverlay(ctx: CanvasRenderingContext2D, v: View) {
+    if (!active(v)) return;
+    const R = sim.R, d = v.d, f = d.focal(), t = sim.t, race = isRace() ? rc() : null;
+    // Freestyle: each table's name over its far edge.
+    if (!race)
+      fs().park.tables.forEach((tb, k) => {
+        if (!d.project(tb.cx, PARK_TOP + 2.2, tb.cz - TZ * 0.6, tmp) || tmp[2]! < 2 || tmp[2]! > (view ? 60 : 400)) return;
+        sticker(ctx, tmp[0]!, tmp[1]!, tb.name, P.tables[k]!, P.ink, Math.max(0.7, Math.min(1.15, f / tmp[2]! / 30)));
       });
+    if (mode === "menu") return;
+    // Tags over the other buggies (chase view, near enough to read).
+    if (view)
+      for (let k = 0; k < sim.count; k++) {
+        if (k === v.car) continue;
+        const p = k * 3;
+        if (!d.project(sim.pos[p]!, sim.pos[p + 1]! + 1.3, sim.pos[p + 2]!, tmp) || tmp[2]! < 2 || tmp[2]! > 34) continue;
+        sticker(ctx, tmp[0]!, tmp[1]!, sim.name(k), P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
+      }
+    if (race) {
+      const tr = race.tr;
+      // The shortcut's sign where a branch leaves the loop.
+      for (let b = 1; b < tr.paths.length; b++) {
+        const p = tr.paths[b]!, i = Math.min(p.n - 1, 4), x = p.P[i * 2]!, z = p.P[i * 2 + 1]!;
+        if (!d.project(x, t.height(x, z) + 1.6, z, tmp) || tmp[2]! < 1 || tmp[2]! > 40) continue;
+        sticker(ctx, tmp[0]!, tmp[1]!, p.label, P.lip, P.ink, Math.max(0.7, Math.min(1.1, f / tmp[2]! / 26)));
+      }
+      if (R[0] !== DONE) {
+        const g = race.C[v.car * K + NEXT]! % race.gates, m = v.gates[g]![2]!.M;
+        if (d.project(m[9]!, m[10]! + 1.05, m[11]!, tmp) && tmp[1]! > v.safe[0]! - 4) {
+          const last = race.C[v.car * K + NEXT]! >= race.gates * race.laps;
+          sticker(ctx, tmp[0]!, tmp[1]!, g ? "" + g : last ? "FINISH" : "LAP", P.gNext, P.night ? P.ink : "#ffffff", Math.max(0.7, Math.min(1.25, f / Math.max(1, tmp[2]!) / 30)));
+        }
+      }
+    }
+    if (mode !== "demo") minimap(ctx, v);
+  }
+  /** The minimap: the loop and its branches, the gates to come (or the park's tables), every buggy (yours ringed). */
+  function minimap(ctx: CanvasRenderingContext2D, v: View) {
+    const HX = sim.HX, HZ = sim.HZ, d = v.d, W = d.width, H = d.height, narrow = W < 560, MB = v.MB, race = isRace() ? rc() : null;
+    if (!MB[5]) {
+      const bw = narrow ? 104 : 172, s = bw / (HX * 2), bh = HZ * 2 * s;
+      MB[0] = W - bw - (narrow ? 10 : 14); MB[1] = H - bh - (narrow ? 10 : 14); MB[2] = s; MB[3] = bw; MB[4] = bh; MB[5] = 1;
+      v.MAP = race
+        ? race.tr.paths.map((p) => {
+            const out = new Float64Array(p.n * 2);
+            for (let i = 0; i < p.n; i++) (out[i * 2] = MB[0]! + (p.P[i * 2]! + HX) * s), (out[i * 2 + 1] = MB[1]! + (p.P[i * 2 + 1]! + HZ) * s);
+            return out;
+          })
+        : [];
     }
     const x0 = MB[0]!, y0 = MB[1]!, s = MB[2]!, bw = MB[3]!, bh = MB[4]!;
     ctx.fillStyle = P.ink;
@@ -1034,34 +1347,240 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.lineJoin = ctx.lineCap = "round";
-    for (let pi = 0; pi < MAP.length; pi++) {
-      const M = MAP[pi]!, n = M.length / 2;
+    if (race) {
+      for (let pi = 0; pi < v.MAP.length; pi++) {
+        const M = v.MAP[pi]!, n = M.length / 2;
+        ctx.beginPath();
+        ctx.moveTo(M[0]!, M[1]!);
+        for (let i = 1; i < n; i++) ctx.lineTo(M[i * 2]!, M[i * 2 + 1]!);
+        if (!pi) ctx.closePath();
+        ctx.strokeStyle = pi ? P.lip : P.edge;
+        ctx.lineWidth = pi ? 2 : 3;
+        ctx.setLineDash(pi ? [4, 3] : []);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      const g = race.C[v.car * K + NEXT]! % race.gates, gi = race.tr.GATE[g]!, M0 = v.MAP[0]!;
+      ctx.fillStyle = P.gNext;
       ctx.beginPath();
-      ctx.moveTo(M[0]!, M[1]!);
-      for (let i = 1; i < n; i++) ctx.lineTo(M[i * 2]!, M[i * 2 + 1]!);
-      if (!pi) ctx.closePath();
-      ctx.strokeStyle = pi ? P.lip : P.edge;
-      ctx.lineWidth = pi ? 2 : 3;
-      ctx.setLineDash(pi ? [4, 3] : []);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    const g = race.C[NEXT]! % race.gates, gi = tr.GATE[g]!, M0 = MAP[0]!;
-    ctx.fillStyle = P.gNext;
-    ctx.beginPath();
-    ctx.arc(M0[gi * 2]!, M0[gi * 2 + 1]!, 4, 0, TAU);
-    ctx.fill();
-    for (let k = race.count - 1; k >= 0; k--) {
-      const x = x0 + (race.pos[k * 3]! + tr.HX) * s, y = y0 + (race.pos[k * 3 + 2]! + tr.HZ) * s;
+      ctx.arc(M0[gi * 2]!, M0[gi * 2 + 1]!, 4, 0, TAU);
+      ctx.fill();
+    } else
+      fs().park.tables.forEach((tb, k) => {
+        ctx.strokeStyle = P.tables[k]!;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x0 + (tb.cx - TX + HX) * s, y0 + (tb.cz - TZ + HZ) * s, TX * 2 * s, TZ * 2 * s);
+      });
+    for (let k = sim.count - 1; k >= 0; k--) {
+      const x = x0 + (sim.pos[k * 3]! + HX) * s, y = y0 + (sim.pos[k * 3 + 2]! + HZ) * s;
       ctx.fillStyle = P.cars[k]![0]!;
       ctx.strokeStyle = P.ink;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, k ? 4 : 5.5, 0, TAU);
+      ctx.arc(x, y, k === v.car ? 5.5 : 4, 0, TAU);
       ctx.fill();
       ctx.stroke();
     }
   }
+
+  // ---- input: keys (one or two people), the pointer, gamepads ----
+  /** Gamepads seen (polled only once one has connected). */
+  let pads = false;
+  const GP = new Float64Array(2 * 5);
+  addEventListener("gamepadconnected", () => ((pads = true), engine.wake()), sig);
+  function pollPads() {
+    GP.fill(0);
+    if (!pads || typeof navigator.getGamepads !== "function") return;
+    const list = navigator.getGamepads();
+    let p = 0;
+    for (let i = 0; i < list.length && p < 2; i++) {
+      const g = list[i];
+      if (!g || !g.connected) continue;
+      const b = (n: number) => (g.buttons[n] ? g.buttons[n]!.value || (g.buttons[n]!.pressed ? 1 : 0) : 0), ax = g.axes[0] ?? 0, q = p * 5;
+      GP[q] = Math.max(b(7), b(12));
+      GP[q + 1] = Math.max(b(6), b(13));
+      GP[q + 2] = Math.abs(ax) > 0.15 ? ax : b(15) - b(14);
+      GP[q + 3] = b(0) || b(3) ? 1 : 0;
+      GP[q + 4] = Math.max(b(1), b(2), b(5));
+      if (GP[q]! + GP[q + 1]! + Math.abs(GP[q + 2]!) + GP[q + 3]! + GP[q + 4]! > 0.05) (moved = true), mode === "demo" && takeOver();
+      p++;
+    }
+  }
+  /** Person p's inputs into I (keys or pad, the pointer for P1 alone, a gamepad). */
+  function readInput(p: number) {
+    const cc = ctl(p), q = p * 5, alone = NV === 1;
+    I[0] = Math.max(cc.down(GAS) || (alone && PD[0]) ? 1 : 0, GP[q]!);
+    I[1] = Math.max(cc.down(BRAKE) ? 1 : 0, GP[q + 1]!);
+    const st = alone && PD[0] ? Math.max(-1, Math.min(1, (PD[2]! - PD[1]!) / Math.max(40, v0.d.width * 0.1))) : cc.axis("left", "right");
+    I[2] = Math.max(-1, Math.min(1, st + GP[q + 2]!));
+    I[3] = cc.down(NITRO) || GP[q + 3] ? 1 : 0;
+    I[4] = Math.max(cc.down(DRIFT) ? 1 : 0, GP[q + 4]!);
+    if (I[0] || I[1] || I[2] || I[3] || I[4]) moved = true;
+  }
+
+  // ---- online: the room, the lockstep link, rematch, leaving ----
+  const net = {
+    on: false,
+    seat: 0,
+    seed: 0,
+    round: 0,
+    ready: false,
+    peerReady: false,
+    pick: { mode: "race" as "race" | "free", track: 0, rivals: 0, laps: 0 },
+    link: null as Presence | null,
+    abort: null as AbortController | null,
+    room: Math.min(ROOM_N - 1, Math.max(0, Number(qs.get("room")) | 0)),
+    code: "",
+    /** Start the match on this seat: the same sim on both screens, stepped by presence. */
+    begin(s: { transport: Transport; slot: number; seed: number; mode: number }) {
+      const m = unpackMode(s.mode);
+      net.on = true;
+      net.seat = s.slot;
+      net.seed = s.seed >>> 0;
+      net.round = 0;
+      net.ready = net.peerReady = false;
+      net.pick = { mode: m.free ? "free" : "race", track: m.track, rivals: m.rivals, laps: m.laps };
+      want.laps = m.laps;
+      want.humans = -1;
+      auto = false;
+      startRace(TRACKS[m.track]!.id, net.seed);
+      net.link = presence(engine, {
+        transport: s.transport, slot: s.slot, players: 2,
+        input: () => {
+          if (paused || !result.hidden || mode !== "race") readNone();
+          else pollPads(), readInput(0);
+          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0));
+        },
+        step: (_e, inputs) => {
+          for (let p = 0; p < 2; p++) decode(inputs[p]!, p, sim.IN, sim.AUTO);
+          net.peerReady = !!(inputs[1 - net.seat]! & B_READY);
+          // A rematch: both READY in the same frame (so on the same frame on both screens).
+          if (sim.R[0] === DONE && inputs[0]! & B_READY && inputs[1]! & B_READY) return net.rematch();
+          sim.step(1 / 60);
+          if (sim.n) events();
+        },
+        hash: () => hashOf(sim.bytes),
+      });
+      showNet(`ONLINE · ROOM ${net.room} · P${s.slot + 1}`, "live");
+    },
+    rematch() {
+      net.round++;
+      net.ready = net.peerReady = false;
+      sim.reset((Math.imul(net.seed, 2654435761) + net.round * 40503) >>> 0);
+      startRace(def.id, 0, false);
+    },
+    /** Leave (or lose) the match; `menu` goes back to the menu. */
+    end(menuToo: boolean) {
+      net.abort?.abort();
+      net.abort = null;
+      const was = net.on;
+      net.on = false;
+      try {
+        net.link?.destroy();
+      } catch {}
+      net.link = null;
+      netChip.hidden = true;
+      want.laps = o.laps ?? 0;
+      if (was && menuToo && !destroyed) showMenu();
+    },
+  };
+  const readNone = () => I.fill(0);
+  function showNet(text: string, conn: string) {
+    netChip.hidden = false;
+    netChip.dataset.conn = conn;
+    netChip.lastElementChild!.textContent = text;
+  }
+  /** The other screen left (or the link broke, or the two sims disagree): the match ends here. */
+  function netGone(text: string) {
+    net.end(false);
+    mode = "menu";
+    showCard(roomC);
+    roomStep("gone");
+    $(".dh-gone-say").textContent = text;
+    say(text);
+  }
+  const roomForm = roomC.querySelector("form") as HTMLFormElement, field = (n: string) => roomForm.elements.namedItem(n) as HTMLInputElement;
+  const roomStep = (s: "join" | "wait" | "gone") => {
+    roomC.dataset.step = s;
+    for (const el of roomC.querySelectorAll<HTMLElement>("[data-for]")) el.hidden = el.dataset.for !== s;
+    roomC.querySelector<HTMLElement>(`[data-for="${s}"] :is(input, button)`)?.focus({ preventScroll: true });
+  };
+  const roomSay = (t: string) => ($(".dh-say").textContent = t);
+  const showRoom = () => ((roomForm.elements.namedItem("roomShow") as HTMLOutputElement).value = String(net.room));
+  showRoom();
+  {
+    const w = window as unknown as { __duneInvite?: string };
+    field("code").value = qs.get("code") || w.__duneInvite || (() => { try { return sessionStorage.getItem("dune-hop:code") || ""; } catch { return ""; } })();
+    delete w.__duneInvite;
+  }
+  function openRoom() {
+    mode = "menu";
+    showCard(roomC);
+    roomStep("join");
+    roomSay(ROOMS_URL ? "" : "Online play needs a room server: this build has none set.");
+  }
+  async function checkCode(code: string) {
+    const r = await fetch(`${ROOMS_URL.replace(/^ws/, "http")}/invite`, { method: "POST", body: code, referrerPolicy: "no-referrer" }).catch(() => null);
+    if (!r) return null;
+    if (r.status === 429) return "slow";
+    return r.ok;
+  }
+  roomForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!ROOMS_URL) return roomSay("Online play needs a room server: this build has none set.");
+    const code = field("code").value.trim().toUpperCase();
+    if (code.length < 6) return roomSay("Enter the invite code you were sent.");
+    roomSay("Checking the code…");
+    const ok = await checkCode(code);
+    if (ok === null) return roomSay("Can't reach the game server. Check your connection and try again.");
+    if (ok === "slow") return roomSay("Too many tries. Wait a minute, then try again.");
+    if (!ok) return roomSay("That invite code isn't on the list.");
+    roomSay("");
+    net.code = code;
+    try {
+      sessionStorage.setItem("dune-hop:code", code);
+    } catch {}
+    enterRoom();
+  }, sig);
+  const seatsEl = $(".dh-seats");
+  async function enterRoom() {
+    roomStep("wait");
+    $(".dh-room-sub").textContent = `ROOM ${net.room} · WAITING`;
+    seatsEl.innerHTML = `<li class="dh-me">P1 · YOU</li><li>OPEN SEAT</li>`;
+    $(".dh-wait-say").textContent = "Waiting for player 2.";
+    net.abort = new AbortController();
+    const signal = net.abort.signal, mine = packMode(pick.mode === "free", Math.max(0, TRACKS.indexOf(def)), pick.rivals, Math.min(7, o.laps ?? 0));
+    for (let tries = 0; ; tries++) {
+      try {
+        const s = await joinRoom(ROOMS_URL, net.room, net.code, mine, signal, (seat, seated) => {
+          seatsEl.innerHTML = [0, 1].map((i) => `<li class="${i === seat ? "dh-me" : i < seated ? "dh-in" : ""}">${i === seat ? `P${i + 1} · YOU` : i < seated ? `P${i + 1}` : "OPEN SEAT"}</li>`).join("");
+          $(".dh-wait-say").textContent = seated < 2 ? "Waiting for player 2." : "Starting…";
+          $(".dh-room-sub").textContent = `ROOM ${net.room} · P${seat + 1} · ${seated} OF 2`;
+        });
+        if (signal.aborted || destroyed) return s.transport.close();
+        net.abort = null;
+        return net.begin(s);
+      } catch {
+        if (signal.aborted || destroyed) return;
+        if (tries >= 2) return roomStep("gone"), ($(".dh-gone-say").textContent = `Room ${net.room} is full or mid-match. Try another room.`);
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+  }
+  for (const b of roomC.querySelectorAll<HTMLButtonElement>("[data-room]")) b.addEventListener("click", () => ((net.room = (net.room + Number(b.dataset.room) + ROOM_N) % ROOM_N), showRoom()), sig);
+  $(".dh-room-back").addEventListener("click", showMenu, sig);
+  $(".dh-room-menu").addEventListener("click", showMenu, sig);
+  $(".dh-room-again").addEventListener("click", () => roomStep("join"), sig);
+  $(".dh-room-cancel").addEventListener("click", () => (net.abort?.abort(), roomStep("join")), sig);
+  $(".dh-share").addEventListener("click", async () => {
+    const url = `${location.origin}${location.pathname}?mode=online&room=${net.room}${qs.get("rooms") ? `&rooms=${encodeURIComponent(ROOMS_URL)}` : ""}${net.code ? `&code=${encodeURIComponent(net.code)}` : ""}`, k = $(".dh-share");
+    try {
+      if (navigator.share) await navigator.share({ title: "Dune Hop · online", text: `Race me in Dune Hop, room ${net.room}.`, url });
+      else await navigator.clipboard.writeText(url), (k.textContent = "LINK COPIED");
+    } catch {
+      k.textContent = "COPY FAILED";
+    }
+  }, sig);
 
   // ---- the loop ----
   // Adaptive resolution: a slow device (long frames while racing) draws fewer pixels, down to half;
@@ -1088,68 +1607,92 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         V[1] = 0;
         root.dataset.theme = pageTheme();
         const next = pal();
-        if (next !== P) (P = next), stage.toggleAttribute("data-day", !P.night), buildScene(), (dirty = true);
+        if (next !== P) (P = next), stage.toggleAttribute("data-day", !P.night), buildAll(), (dirty = true);
       }
       if (V[0]) {
         V[0] = 0;
-        const sr = stage.getBoundingClientRect(), hr = headEl.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
-        dio.resize(cr.width || 1, cr.height || 1, Math.min(2, devicePixelRatio || 1) * FT[2]!);
-        V[2] = Math.max(8, (hr.height ? hr.bottom : sr.top) - sr.top + 8);
-        V[3] = 10;
-        sky = null;
-        MB[5] = 0;
-        frameTable();
-        if (!view) Object.assign(dio.cam, TABLE);
-        else aim(true);
+        for (const v of views) {
+          if (!active(v)) continue;
+          const vr = v.el.getBoundingClientRect(), hr = v.head.getBoundingClientRect(), cr = v.canvas.getBoundingClientRect();
+          v.d.resize(cr.width || 1, cr.height || 1, Math.min(2, devicePixelRatio || 1) * FT[2]! * (NV > 1 ? 0.85 : 1));
+          v.safe[0] = Math.max(8, (hr.height ? hr.bottom : vr.top) - vr.top + 8);
+          v.safe[1] = 10;
+          v.sky = null;
+          v.MB[5] = 0;
+          frameTable(v);
+          if (!view) Object.assign(v.d.cam, v.TABLE);
+          else aim(v, true);
+        }
         hudDirty = dirty = true;
       }
     },
     step(e, dt) {
       if (cardAt >= 0 && e.time >= cardAt) (cardAt = -1), showEnd();
       let moving = false;
-      if (!paused && mode !== "menu") {
-        // Inputs: keys and pad (controls), the pointer (hold for gas, drag to steer), or the autopilot.
-        I[0] = c.down(GAS) || PD[0] ? 1 : 0;
-        I[1] = c.down(BRAKE) ? 1 : 0;
-        I[2] = PD[0] ? Math.max(-1, Math.min(1, (PD[2]! - PD[1]!) / Math.max(40, dio.width * 0.1))) : c.axis("left", "right");
-        I[3] = c.down(NITRO) ? 1 : 0;
-        I[4] = c.down(DRIFT) ? 1 : 0;
-        // Car 0's inputs (one person; a second view would fill car 1's from its own keys).
-        for (let k = 0; k < IK; k++) race.IN[k] = I[k]!;
-        race.AUTO[0] = auto ? 1 : 0;
-        moving = race.step(dt);
-        if (race.n) events(), (moving = true);
+      if (net.on) {
+        // Online: presence steps the sim (after this system); the match keeps the engine awake.
+        moving = true;
+        const nl = net.link;
+        if (nl && nl.lost) netGone(`P${2 - net.seat} left the match.`);
+        else if (nl && nl.desync >= 0) netGone("The two screens fell out of sync. Start a new match.");
+        else if (nl) showNet(`ONLINE · ROOM ${net.room} · P${net.seat + 1}${nl.away ? " · RECONNECTING" : ""}${!result.hidden && net.peerReady ? " · P" + (2 - net.seat) + " WANTS A REMATCH" : ""}`, nl.away ? "wait" : "live");
+      } else if (!paused && mode !== "menu") {
+        pollPads();
+        // Inputs per person: keys and pad (controls), the pointer (P1 alone), a gamepad, or the autopilot.
+        for (let p = 0; p < sim.humans; p++) {
+          readInput(p);
+          for (let k = 0; k < IK; k++) sim.IN[p * IK + k] = I[k]!;
+          sim.AUTO[p] = auto ? 1 : 0;
+        }
+        moving = sim.step(dt);
+        if (sim.n) events(), (moving = true);
       }
-      if (!paused && stepFx(dt)) moving = true;
-      if (stepCam(dt)) moving = true;
-      if (dropT > 0) (dropT = Math.max(0, dropT - dt)), (moving = true);
-      if (shake > 0) (shake = Math.max(0, shake - dt)), (moving = true);
-      if (flashT > 0 && (flashT -= dt) <= 0) (flash = -1), paintGates(), (moving = true);
-      if (toastT > 0) (toastT = Math.max(0, toastT - dt)), (moving = true), toastT === 0 && (toastEl.hidden = true);
-      if (countT > 0) (countT = Math.max(0, countT - dt)), (moving = true), countT === 0 && (countEl.hidden = true);
+      if (!paused || net.on) if (stepFx(dt)) moving = true;
+      for (let i = 0; i < NV; i++) {
+        const v = views[i]!;
+        if (stepCam(v, dt)) moving = true;
+        if (v.shake > 0) (v.shake = Math.max(0, v.shake - dt)), (moving = true);
+        if (v.toastT > 0) (v.toastT = Math.max(0, v.toastT - dt)), (moving = true), v.toastT === 0 && (v.toastEl.hidden = true);
+        if (v.countT > 0) (v.countT = Math.max(0, v.countT - dt)), (moving = true), v.countT === 0 && (v.countEl.hidden = true);
+      }
+      for (let k = 0; k < sim.count; k++) if (DROP[k]! > 0) (DROP[k] = Math.max(0, DROP[k]! - dt)), (moving = true);
+      if (flashT > 0 && (flashT -= dt) <= 0) (flash = -1), views.forEach(paintGates), (moving = true);
       if (moving) (pulse += dt), e.busy(), (dirty = hudDirty = true);
       if ((boardT += dt) > 0.25) (boardT = 0), mode !== "menu" && boardWrite();
     },
     render() {
-      if (hudDirty) (hudDirty = false), hudWrite(), paintGates();
+      if (hudDirty) {
+        hudDirty = false;
+        sharedHud();
+        for (let i = 0; i < NV; i++) hudWrite(views[i]!), paintGates(views[i]!);
+      }
       if (!dirty) return;
       dirty = false;
-      pose();
-      const cam = dio.cam, k = shake * shake * 10, sx = Math.sin(engine.time * 71) * k, sy = Math.cos(engine.time * 53) * k * 0.7;
-      (cam.ox += sx), (cam.oy += sy);
-      dio.draw();
-      (cam.ox -= sx), (cam.oy -= sy), (V[4] = 1);
+      for (let i = 0; i < NV; i++) {
+        const v = views[i]!, cam = v.d.cam, k = v.shake * v.shake * 10, sx = Math.sin(engine.time * 71) * k, sy = Math.cos(engine.time * 53) * k * 0.7;
+        if (i) copyPool(v0.dust!, v.dust!), copyPool(v0.spark!, v.spark!);
+        pose(v);
+        (cam.ox += sx), (cam.oy += sy);
+        v.d.draw();
+        (cam.ox -= sx), (cam.oy -= sy);
+      }
     },
     pause() {
       PD[0] = 0;
     },
   });
 
-  // ---- input ----
-  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", ShiftLeft: "drift", ShiftRight: "drift" };
+  // ---- keys ----
+  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", KeyQ: "nitro", Enter: "nitro", ShiftLeft: "drift", ShiftRight: "drift" };
+  /** Two on one screen: which person a key is for (1: P2; the rest P1). */
+  const P2_KEYS: Record<string, number> = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, ShiftRight: 1, Enter: 1, NumpadEnter: 1, Slash: 1 };
+  const MAP_P2: Record<string, string> = { NumpadEnter: "nitro", Slash: "nitro" };
   const keyMode = o.keyboard ?? (dropIn ? "page" : "focus");
   const keyHost: EventTarget = keyMode === "page" ? window : stage;
-  const mine = (e: Event) => keyMode === "focus" || !(e.target as Element)?.closest?.("input,textarea,select,[contenteditable]");
+  /** The element a key came from, inside the shadow root too (a window listener sees only the host). */
+  const src = (e: Event) => ((e.composedPath?.()[0] ?? e.target) as Element | null);
+  const mine = (e: Event) => !src(e)?.closest?.("input,textarea,select,[contenteditable]");
+  const keyOf = (code: string) => MAP_K[code] ?? (NV > 1 ? MAP_P2[code] : undefined);
   keyHost.addEventListener("keydown", (ev) => {
     const e = ev as KeyboardEvent;
     if (e.metaKey || e.ctrlKey || e.altKey || !mine(e) || destroyed) return;
@@ -1163,25 +1706,26 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
     if (code === "KeyP") return void (e.preventDefault(), setPaused(!paused));
     if (code === "KeyM") return void (e.preventDefault(), toggleMute());
-    if (code === "KeyV" && mode !== "menu") return void (e.preventDefault(), setView(view ? 0 : 1));
-    if (code === "KeyR" && mode !== "menu") return void (e.preventDefault(), startRace(def.id));
-    if (code === "KeyT") return void (e.preventDefault(), showMenu());
-    const k = MAP_K[code];
-    if (!k || (e.target as Element).closest?.(".bui-pad")) return;
+    if (code === "KeyV" && mode !== "menu") return void (e.preventDefault(), setView(v0, view ? 0 : 1));
+    if (code === "KeyR" && mode !== "menu" && !net.on) return void (e.preventDefault(), startRace(def.id));
+    if (code === "KeyT" && !net.on) return void (e.preventDefault(), showMenu());
+    const k = keyOf(code);
+    if (!k || src(e)?.closest?.(".bui-pad")) return;
     if (mode === "menu" || paused || !result.hidden) return;
+    if (code === "Enter" && src(e)?.closest?.("button") && src(e) !== play) return;
     e.preventDefault();
     if (mode === "demo") takeOver();
-    if (!e.repeat) c.press(k);
+    if (!e.repeat) ctl(NV > 1 && P2_KEYS[code] ? 1 : 0).press(k);
     engine.wake();
   }, sig);
   keyHost.addEventListener("keyup", (ev) => {
-    const k = MAP_K[(ev as KeyboardEvent).code];
-    if (k) c.press(k, false);
+    const code = (ev as KeyboardEvent).code, k = keyOf(code);
+    if (k) ctl(NV > 1 && P2_KEYS[code] ? 1 : 0).press(k, false), c.press(k, false);
   }, sig);
   play.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     play.focus({ preventScroll: true });
-    if (mode === "menu" || paused || !result.hidden) return;
+    if (mode === "menu" || paused || !result.hidden || NV > 1) return;
     if (mode === "demo") takeOver();
     play.setPointerCapture(e.pointerId);
     (PD[0] = 1), (PD[1] = PD[2] = e.offsetX), (PD[3] = e.pointerId);
@@ -1197,50 +1741,71 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     paintMute();
   }
   muteK.addEventListener("click", toggleMute, sig);
-  viewK.addEventListener("click", () => mode !== "menu" && setView(view ? 0 : 1), sig);
-  $(".dh-k-tracks").addEventListener("click", showMenu, sig);
+  viewK.addEventListener("click", () => mode !== "menu" && setView(v0, view ? 0 : 1), sig);
+  $(".dh-k-tracks").addEventListener("click", () => (net.on ? setPaused(true) : showMenu()), sig);
   $(".dh-k-pause").addEventListener("click", () => setPaused(!paused), sig);
   $(".dh-resume").addEventListener("click", () => setPaused(false), sig);
   $(".dh-padk").addEventListener("click", swapPad, sig);
-  $(".dh-start").addEventListener("click", () => startRace(def.id), sig);
+  for (const s of hud.querySelectorAll<HTMLElement>("[data-seg]"))
+    for (const b of s.querySelectorAll<HTMLButtonElement>("button"))
+      b.addEventListener("click", () => {
+        if (s.dataset.seg === "mode") pick.mode = b.dataset.v === "free" ? "free" : "race";
+        else pick.players = b.dataset.v === "2" ? "2" : b.dataset.v === "net" ? "net" : "1";
+        store.set("menu", JSON.stringify({ mode: pick.mode, players: pick.players === "net" ? "1" : pick.players, rivals: pick.rivals }));
+        setup(pick.mode, 1, 3, def.id);
+        menuWrite();
+        dirty = true;
+        engine.wake();
+      }, sig);
+  $(".dh-rivk").addEventListener("click", () => ((pick.rivals = pick.rivals ? 0 : 3), store.set("menu", JSON.stringify({ mode: pick.mode, players: pick.players === "net" ? "1" : pick.players, rivals: pick.rivals })), menuWrite()), sig);
+  $(".dh-start").addEventListener("click", () => (pick.players === "net" ? openRoom() : startRace(def.id)), sig);
   paintPad();
   $(".dh-restart").addEventListener("click", () => startRace(def.id), sig);
   $(".dh-totracks").addEventListener("click", showMenu, sig);
-  $(".dh-r-again").addEventListener("click", () => startRace(def.id), sig);
+  $(".dh-r-again").addEventListener("click", () => {
+    if (!net.on) return startRace(def.id);
+    net.ready = true;
+    $(".dh-r-again").textContent = "WAITING FOR P" + (2 - net.seat);
+  }, sig);
   $(".dh-r-next").addEventListener("click", () => startRace(TRACKS[(TRACKS.indexOf(def) + 1) % TRACKS.length]!.id), sig);
   $(".dh-r-tracks").addEventListener("click", showMenu, sig);
   if (dropIn) L.style(document.documentElement, "overflow", "hidden");
 
   stage.toggleAttribute("data-day", !P.night);
-  buildScene();
-  setView(0);
-  if (o.attract) startRace(def.id, o.seed ?? 1);
+  buildAll();
+  setView(v0, 0);
+  if (o.attract) (pick.mode = "race"), (pick.players = "1"), startRace(def.id, o.seed ?? 1);
+  else if (pick.players === "net" && qs.get("mode") === "online") showMenu(), openRoom();
   else showMenu();
   engine.start();
 
   const api = {
     engine,
     get race() {
-      return race;
+      return sim;
     },
     get track() {
-      return def.id;
+      return sim.kind === "free" ? "freestyle" : def.id;
     },
-    /** Race now (a track id, else the current one). */
-    start(id?: string) {
+    /** Race now (a track id, else the current one); `opts` sets the mode and the people first. */
+    start(id?: string, opts: { mode?: "race" | "free"; players?: 1 | 2; rivals?: number } = {}) {
+      if (opts.mode) pick.mode = opts.mode;
+      else if (id) pick.mode = "race";
+      if (opts.players) pick.players = opts.players === 2 ? "2" : "1";
+      if (opts.rivals !== undefined) pick.rivals = opts.rivals ? 3 : 0;
       startRace(id ?? def.id);
     },
     pause: () => setPaused(true),
     resume: () => setPaused(false),
     /** Take the wheel from the demo lap. */
     takeOver,
-    /** The track menu. */
+    /** The menu. */
     menu: showMenu,
     /** End the race now (the result card follows). */
     finish(_won?: boolean) {
-      if (mode === "menu") return;
-      race.finish();
-      if (race.n) events();
+      if (mode === "menu" || net.on) return;
+      sim.finish();
+      if (sim.n) events();
       cardAt = engine.time;
       engine.busy(0.5);
       engine.wake();
@@ -1252,19 +1817,27 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       auto = on;
       engine.wake();
     },
+    /** The online link (frame, stalls, desync, lost), or null. */
+    get net() {
+      return net.link;
+    },
     /** The state for tests and harnesses. */
     getSnapshot() {
-      const R = race.R, C = race.C, v = race.cars[0]!;
-      const status = destroyed ? "destroyed" : mode === "menu" ? "idle" : paused ? "paused" : !result.hidden ? (C[PLACE] === 1 ? "won" : "gameover") : "running";
+      const R = sim.R, C = sim.C, me = v0.car, v = sim.cars[me]!, o2 = me * K;
+      const status = destroyed ? "destroyed" : mode === "menu" ? "idle" : paused ? "paused" : !result.hidden ? (isRace() ? (C[o2 + PLACE] === 1 ? "won" : "gameover") : fs().winner() === me ? "won" : "gameover") : "running";
+      const car = (c0: number) => ({ x: sim.pos[c0 * 3]! * 20, y: sim.pos[c0 * 3 + 2]! * 20, angle: sim.cars[c0]!.yaw, speed: sim.cars[c0]!.speed, score: sim.scs[c0]!.S[SC]!, table: isRace() ? -1 : C[c0 * K + FTABLE]!, transfers: isRace() ? 0 : C[c0 * K + XFERS]!, place: isRace() ? C[c0 * K + PLACE]! : 0 });
       return {
-        status, mode, track: def.id, phase: R[0] === COUNT ? "count" : R[0] === RUN ? "race" : "done", elapsed: R[1]!, place: C[PLACE]!, lap: C[LAP]!, laps: race.laps, gate: C[NEXT]!,
-        score: race.sc.S[SC]!, combo: race.sc.S[CB]!, nitro: race.N[0]!, crashed: C[PH] === CRASH, view: view ? "chase" : "table", speed: v.speed, air: v.air, lapStart: C[LAPT]!,
-        player: { x: race.pos[0]! * 20, y: race.pos[2]! * 20, angle: v.yaw },
+        status, mode, kind: sim.kind, track: api.track, phase: R[0] === COUNT ? "count" : R[0] === RUN ? "race" : "done", elapsed: R[1]!, place: isRace() ? C[o2 + PLACE]! : 0, lap: isRace() ? C[o2 + LAP]! : 0, laps: isRace() ? rc().laps : 0, gate: isRace() ? C[o2 + NEXT]! : 0,
+        score: sim.scs[me]!.S[SC]!, combo: sim.scs[me]!.S[CB]!, nitro: sim.N[me * 2]!, crashed: C[o2 + PH] === CRASH, view: view ? "chase" : "table", speed: v.speed, air: v.air, lapStart: isRace() ? C[o2 + LAPT]! : 0,
+        players: sim.humans, split: NV > 1, online: net.on, seat: net.seat, table: isRace() ? -1 : C[o2 + FTABLE]!, transfers: isRace() ? 0 : C[o2 + XFERS]!, best: freeBest,
+        cars: Array.from({ length: sim.humans }, (_, i) => car(i)),
+        net: net.link ? { frame: net.link.frame, desync: net.link.desync, stalls: net.link.stalls, lost: net.link.lost } : null,
+        player: { x: sim.pos[me * 3]! * 20, y: sim.pos[me * 3 + 2]! * 20, angle: v.yaw },
       };
     },
     /** Your buggy's screen point (CSS px from the canvas's top left), as of the last draw. */
     carScreen() {
-      dio.project(race.pos[0]!, race.pos[1]!, race.pos[2]!, tmp);
+      v0.d.project(sim.pos[v0.car * 3]!, sim.pos[v0.car * 3 + 1]!, sim.pos[v0.car * 3 + 2]!, tmp);
       return [tmp[0]!, tmp[1]!];
     },
     stop: () => api.destroy(),
