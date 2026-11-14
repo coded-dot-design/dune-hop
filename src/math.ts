@@ -44,3 +44,6 @@ export function sincos() {
   }
 }
 export { PI, TAU };
+/** A seeded draw in [0, 1) whose state is S[0]: keep S in the sim's bytes, so a rollback (src/rollback.ts)
+ *  restores it with the rest. The same sequence as @fzlt/core/kernel's `seeded`. */
+export const draw = (S: Uint32Array) => ((S[0] = Math.imul(S[0]!, 1664525) + 1013904223), S[0]! / 4294967296);

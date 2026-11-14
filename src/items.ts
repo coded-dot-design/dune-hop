@@ -13,8 +13,7 @@
 // Deterministic and allocation-free like the sims: typed arrays, a seeded draw, + − × ÷ and square
 // roots; no doubles through calls (ints only), the sim's state in `bytes` (the online hash covers it).
 import type { Drive } from "@fzlt/core/drive";
-import { seeded } from "@fzlt/core/kernel";
-import { SC as TRIG, sincos } from "./math.ts";
+import { SC as TRIG, sincos, draw } from "./math.ts";
 
 export const IT_NONE = 0, IT_BLASTER = 1, IT_OIL = 2, IT_MINE = 3, IT_SHIELD = 4;
 export const ITEM_NAMES = ["", "BLASTER", "OIL SLICK", "ZAP MINE", "SHIELD"];
@@ -50,9 +49,11 @@ export function items(h: ItemHost, boxes: ArrayLike<number>, seed: number, ev: {
   const ON = new Uint8Array(NC), BOT = new Uint8Array(NC), BACK = new Float64Array(NC), HIT = new Uint8Array(NC), BY = new Int8Array(NC);
   /** In: [dt]. */
   const IO = new Float64Array(1), F = new Float64Array(2);
-  let rnd = seeded(seed), emit: (type: number, car: number, val: number) => unknown = () => 0;
+  // The seeded draw: its state in IS, in the bytes (a rollback restores it).
+  const IS = Uint32Array.of(seed), rnd = () => draw(IS);
+  let emit: (type: number, car: number, val: number) => unknown = () => 0;
   function reset(s: number) {
-    rnd = seeded((s ^ 0x5eed17) >>> 0);
+    IS[0] = (s ^ 0x5eed17) >>> 0;
     for (let b = 0; b < NB; b++) {
       const x = boxes[b * 2]!, z = boxes[b * 2 + 1]!;
       B[b * BK] = x; B[b * BK + 1] = h.t.height(x, z) + 0.75; B[b * BK + 2] = z; B[b * BK + 3] = 0;
@@ -244,7 +245,7 @@ export function items(h: ItemHost, boxes: ArrayLike<number>, seed: number, ev: {
     set emit(f: (type: number, car: number, val: number) => unknown) {
       emit = f;
     },
-    bytes: [B, H, BO, Z],
+    bytes: [B, H, BO, Z, IS],
   };
 }
 export type Items = ReturnType<typeof items>;

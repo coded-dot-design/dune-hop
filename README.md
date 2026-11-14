@@ -72,9 +72,12 @@ code in big type, and SEND LINK opens the phone's share sheet (or copies the lin
 room and the code, so it drops a friend straight into the room after the code check. JOIN takes the
 room number by hand. Every player can type a name (kept on the device); the seats show in their
 buggies' colours. The room starts when the host's count is in, or on START NOW with two or more; the
-host's mode, track, rivals and CLEAN / BATTLE ride along (with AI rivals on, they fill the grid to six). The sim runs
-in lockstep on every screen and only inputs travel (`@fzlt/core/presence`: 32 bits per seat per frame,
-sent two frames ahead; a state hash every 30 frames catches a desync). A race, or a three-minute
+host's mode, track, rivals and CLEAN / BATTLE ride along (with AI rivals on, they fill the grid to six). The sim is
+deterministic and only inputs travel (32 bits per seat per frame over `@fzlt/core/presence`'s rooms).
+Your own buggy answers at once: each frame runs straight away with your input (a frame or so ahead)
+and a guess for everyone else's (their last); when a real input turns out different, the race goes
+back to that frame and runs forward again (`src/rollback.ts`), and remote buggies ease into place
+instead of popping. A state hash every 30 final frames catches a desync. A race, or a three-minute
 Freestyle jam for up to four (the top score wins); REMATCH on every screen starts the next on the same
 frame. If someone leaves, the AI drives their buggy from the next frame on, the same on every screen,
 and the match goes on; when everyone else has gone it ends. A room is as big as the room server
@@ -115,17 +118,23 @@ bundled at build.
 npm ci
 npm run check         # typecheck, build dist/ (committed), size
 npm test              # headless: tracks, a full race on every track, Freestyle (every table-to-table
-                      # jump, scoring, the gap, the jam), lockstep sync (presence syncCheck, a desync
-                      # caught; BATTLE races and King of the Table for 2 and 4), determinism,
+                      # jump, scoring, the gap, the jam), online sync (a desync caught; every sim
+                      # restores exactly; rollback over a link with latency and jitter ends byte
+                      # for byte on the no-latency run: races, BATTLE, King of the Table, 2 and 4;
+                      # a leaver; no garbage from corrections), determinism,
                       # allocation; BATTLE (every item, every hit recovers, the shield, the draw,
                       # King of the Table) and no crash-out on any landing
 npm run test:settle   # the menu and the hero sleep, the race never does, off screen pauses, Recall
 npm run test:browser  # Chromium at 1440 and 390: keyboard, mouse, touch, pause, a full race, Freestyle,
                       # split screen, Recall; tests/battle.mjs: BATTLE (pick up and fire with keys
                       # and touch, hits, the shield, a mine's tumble) and King of the Table; then tests/online.mjs: four pages (two at 1440, two
-                      # phones) race online against a stand-in room server (tests/room-server.mjs):
-                      # host (BATTLE on), link, join by number, names, a leaver, rematch; a King of
-                      # the Table jam in lockstep
+                      # phones) race online against a stand-in room server (tests/room-server.mjs)
+                      # on phone links (its latency shim): host (BATTLE on), link, join by number,
+                      # names, key → screen time and no waiting at 1440 and 390, a leaver, rematch;
+                      # a King of the Table jam
+npm run test:net      # online on phone links, measured (60–150 ms round trips, ± 30 ms jitter, 300 ms
+                      # spikes; two and four screens): key → screen, frames that waited, sim rate,
+                      # frames run again; `node tests/netlag.mjs --net lockstep` measures the 0.2.x link
 npm run site:build    # the site (landing + /play/) into artifacts/pages
 npm run test:site     # the site at 1440 and 390, light and dark
 node scripts/shots.mjs  # the hero's still poster and the share image, from the game
@@ -133,7 +142,8 @@ node scripts/shots.mjs  # the hero's still poster and the share image, from the 
 
 `src/tracks.ts` (the tracks as data and the course builder), `src/race.ts` (the race: cars, gates,
 laps, rivals, boost), `src/tumble.ts` (the tumble that rights itself), `src/items.ts` (BATTLE), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
-session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room, lockstep that survives a leaver),
+session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room),
+`src/rollback.ts` (rollback over the room: guesses, snapshots, corrections, a leaver), `src/state.ts` (a brick's whole state as bytes),
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 

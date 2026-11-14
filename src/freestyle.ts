@@ -26,6 +26,7 @@ import {
 } from "./race.ts";
 import { tumbler, OVER, RIGHTED } from "./tumble.ts";
 import { items, H_STALL, H_SPIN, H_TUMBLE } from "./items.ts";
+import { withState } from "./state.ts";
 
 /** Freestyle events (on top of the race's): a transfer to another table (value: the table), a combo's end (value: its size). */
 export const E_XFER = 18, E_COMBO = 19;
@@ -53,7 +54,12 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   const park: Park = buildPark(), t = park.t, tables = park.tables;
   const HUM = Math.max(1, Math.min(4, fo.humans ?? 1)), NC = HUM, JAM = fo.jam ?? (HUM > 1 ? 180 : 0), KING = fo.king ?? HUM > 1, BATTLE = !!fo.battle;
   const cars: Drive[] = [];
-  for (let c = 0; c < NC; c++) cars.push(drive(t, { ...CAR_OPTS, surfaces: [0.92, 1.08, 1.02, 1.1, 1.1, 0.9, 1.12], id: c }));
+  // Every byte of each car's state goes in `bytes` (a rollback restores whole cars).
+  const CS: Uint8Array[] = [];
+  for (let c = 0; c < NC; c++) {
+    const [v, st] = withState(() => drive(t, { ...CAR_OPTS, surfaces: [0.92, 1.08, 1.02, 1.1, 1.1, 0.9, 1.12], id: c }));
+    cars.push(v), CS.push(...st.filter((b) => b.buffer !== v.landing.buffer));
+  }
   const DS = cars.map((v) => new Float64Array(v.landing.buffer));
   const C = new Float64Array(NC * K);
   /** [phase, clock, countdown left, done time, seed, −, time after done, any autopilot, −]. */
@@ -483,7 +489,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     place,
     LIPS: park.LIPS, PADV: park.PADV, PAD_LEN: park.PAD_LEN, PAD_W: park.PAD_W,
     /** The whole state as bytes (the online desync check hashes it). */
-    bytes: [C, R, pos, rot, TV, N, hd.DR, ...DS, ...scs.map((s) => s.S), ...it.bytes].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
+    bytes: [C, R, pos, rot, TV, N, hd.DR, ...DS, ...scs.map((s) => s.S), ...it.bytes, ...CS].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
   };
 }
 export type Freestyle = ReturnType<typeof createFreestyle>;
