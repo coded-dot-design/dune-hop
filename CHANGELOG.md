@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The rest of each wheel now sits behind the body on the far side too: the hub caps, the axle stubs
+  and the suspension arms (0.3.0 fixed the tyres only; the arms sat on the body's layer and the caps
+  could float over a side pod). One rule: everything on a wheel goes over the body on the near side
+  and under it on the far side, in order out from the car (arm, tyre, cap, stub); every other part
+  is on the body's layer. The side is now read along the ray from the camera's eye to the car, so a
+  car off the middle of the picture (the chase's lead, a rival, the hero's car right of centre) gets
+  it right too. The test checks every wheel part at 16 headings × 3 pitches × 3 rolls under four
+  cameras, the car centred and off to one side.
+
 ## 0.3.0
 
 - Online is smooth on phones. 0.2.2 made every frame wait for every player's input, sent only two
