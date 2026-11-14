@@ -1,5 +1,5 @@
 {
-  "version": "0.2.1",
+  "version": "0.2.2",
   "fizlet": "0.22.0",
   "gzip": {
     "dune-hop.mjs": 73314,

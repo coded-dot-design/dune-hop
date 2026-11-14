@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2
+
+- Online for up to four phones, a view each. ONLINE opens a room card made for a phone: your name,
+  the invite code, and two big keys, HOST and JOIN. HOST asks how many (2, 3 or 4) and opens a room;
+  the card shows the room number and the code in big type, the seats in their buggies' colours,
+  SEND LINK (the share sheet, or a copied link) and START NOW once two or more are in. The link drops
+  a friend straight into the room after the code check; JOIN takes the room number by hand.
+- Everyone's name shows on every screen: the standings, the tags over the buggies, the result card.
+- Race (with AI rivals on, they fill the grid to six) or a Freestyle jam for up to four.
+- Someone leaves mid-race: the AI drives their buggy on, the same on every screen, and the match
+  goes on; REMATCH with whoever is still there. It ends when everyone else has gone.
+- The size budget is 76,000 bytes gzip (the build: 73,535).
+
 ## 0.2.1
 
 - Phones: the stick now drives. In 0.2.0 the touch stick moved on screen but the game never read it
