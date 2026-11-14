@@ -10,7 +10,11 @@
 import { terrain, type Terrain } from "@fzlt/core/terrain";
 import { hypot } from "@fzlt/core/steer";
 
-export const TRACK_W = 3.6, STEP = 0.5, EDGE = 2.2, KIND_TRACK = 1, KIND_SAND = 0;
+export const TRACK_W = 5.4, STEP = 0.5, EDGE = 2.6, KIND_TRACK = 1, KIND_SAND = 0;
+/** The sand rim round the table: this wide from the edge, this high (the race's soft wall matches it). */
+export const RIM_W = 3.2, RIM_H = 1.5;
+/** Room between the course and the table's edge: the road's half, its blend, the rim, a little sand. */
+const MARGIN = TRACK_W / 2 + EDGE + RIM_W + 0.6;
 const R = TRACK_W / 2 + EDGE;
 
 /** [u along the lap 0..1, height, half-width in world units]. */
@@ -66,52 +70,80 @@ export interface TrackDef {
   city?: boolean;
 }
 
+/** The courses are laid out small and drawn at SCALE: the points (and the stretches measured in world
+ *  units: run-ups, gaps, the elevation's widths) grow with it, and the table is sized to the course
+ *  plus MARGIN on every side. */
+const SCALE = 1.65, RUN = 1.25;
+type Draft = Omit<TrackDef, "cols" | "rows"> & { cols?: number; rows?: number };
+function wide(d: Draft): TrackDef {
+  const k = (a: number[]) => a.map((v) => Math.round(v * SCALE * 100) / 100);
+  const run = (f: { kickers?: Kick[]; gaps?: Gap[]; elev?: Elev[] }) => ({
+    kickers: f.kickers?.map(([u, h, l]) => [u, h, l * RUN] as Kick),
+    gaps: f.gaps?.map(([u, h, l, g]) => [u, h, l * RUN, g] as Gap),
+    elev: f.elev?.map(([u, h, w]) => [u, h, w * SCALE] as Elev),
+  });
+  const pts = k(d.pts);
+  let mx = 0, mz = 0;
+  for (let i = 0; i < pts.length; i += 2) (mx = Math.max(mx, Math.abs(pts[i]!))), (mz = Math.max(mz, Math.abs(pts[i + 1]!)));
+  for (const b of d.branches ?? []) for (let i = 0; i < b.via.length; i += 2) (mx = Math.max(mx, Math.abs(b.via[i]! * SCALE))), (mz = Math.max(mz, Math.abs(b.via[i + 1]! * SCALE)));
+  return {
+    ...d, ...run(d), pts,
+    cols: Math.ceil(((mx + MARGIN) * 2) / d.cell), rows: Math.ceil(((mz + MARGIN) * 2) / d.cell),
+    dunes: { ...d.dunes, scale: d.dunes.scale * 1.3 },
+    branches: d.branches?.map((b) => ({ ...b, ...run(b), via: k(b.via) })),
+  };
+}
+
 export const TRACKS: TrackDef[] = [
-  {
-    id: "sunset-loop", name: "Sunset Loop", tier: 1, laps: 3, cols: 84, rows: 58, cell: 0.4, seed: 20261109,
+  wide({
+    id: "sunset-loop", name: "Sunset Loop", tier: 1, laps: 3, cell: 0.5, seed: 20261109,
     blurb: "The first loop: two kickers, a set of whoops and one banked turn. Learn to land.",
     dunes: { amp: 2.6, scale: 7.5, ridge: 0.78, wind: [1, 0.35], stretch: 2.6 },
     pts: [12.2, 0, 11.4, -5, 7, -6.6, 0, -5.8, -7, -6.6, -11.4, -5, -12.2, 0, -11.4, 5, -7, 6.6, 0, 7.4, 7, 6.6, 11.4, 5],
     gates: [0, 0.16, 0.33, 0.5, 0.66, 0.83],
-    kickers: [[0.15, 0.95, 1.5], [0.64, 1.0, 1.5]],
-    whoops: [[0.78, 0.86, 4, 0.2]],
+    kickers: [[0.2, 0.95, 1.5], [0.7, 1.0, 1.5]],
+    whoops: [[0.81, 0.88, 4, 0.2]],
     berms: [[0.42, 0.56, 0.6]],
-    boosts: [0.06],
-  },
-  {
-    id: "ridge-run", name: "Ridge Run", tier: 2, laps: 3, cols: 108, rows: 76, cell: 0.45, seed: 7340211,
+    // Out of the first bend into the kicker; out of the hairpin into the second.
+    boosts: [0.13, 0.615],
+  }),
+  wide({
+    id: "ridge-run", name: "Ridge Run", tier: 2, laps: 3, cell: 0.55, seed: 7340211,
     blurb: "Up over the ridge and off the crest, a chicane, a banked hairpin and a big kicker.",
     dunes: { amp: 3.0, scale: 8, ridge: 0.82, wind: [1, -0.4], stretch: 2.8 },
     pts: [-17, -10, -6, -10.8, 6, -10, 15, -10.6, 19.6, -6.4, 19, -0.6, 13.4, 1.6, 8.4, -1.2, 3.4, 1.6, 6.6, 6.2, 13.8, 6.6, 19.6, 8.4, 18.4, 12.6, 11, 12.6, 1, 11.4, -7, 7, -12.4, 10.8, -18.6, 9.6, -20, 3, -19.8, -5],
     gates: [0, 0.12, 0.25, 0.37, 0.5, 0.62, 0.75, 0.88],
     elev: [[0.11, 1.6, 5.5], [0.82, 1.1, 5]],
-    kickers: [[0.66, 1.25, 1.8]],
+    kickers: [[0.68, 1.25, 1.8]],
     whoops: [[0.9, 0.97, 5, 0.22]],
     berms: [[0.17, 0.25, 0.75], [0.53, 0.6, 0.7], [0.74, 0.8, 0.6]],
-    boosts: [0.3, 0.47],
-  },
-  {
-    id: "split-canyon", name: "Split Canyon", tier: 3, laps: 3, cols: 124, rows: 80, cell: 0.45, seed: 9917023,
+    // Down the start straight and over the crest; out of the hairpin into the big kicker.
+    boosts: [0.03, 0.625],
+  }),
+  wide({
+    id: "split-canyon", name: "Split Canyon", tier: 3, laps: 3, cell: 0.56, seed: 9917023,
     blurb: "The road splits: the long way round, or the shortcut over the canyon gap. Choose every lap.",
     dunes: { amp: 3.4, scale: 9, ridge: 0.85, wind: [0.6, 1], stretch: 3 },
     pts: [-21, -11, -9, -13, 3, -12, 13, -13.4, 21.6, -10, 23, -2, 21, 6, 22.4, 12, 15, 13.6, 7, 10.4, 0, 13, -8, 13.6, -15, 11, -22, 12.4, -23.6, 5, -21.4, -2, -23.4, -7],
     gates: [0, 0.08, 0.16, 0.64, 0.74, 0.86],
     elev: [[0.25, 1.2, 6], [0.45, 1.6, 7]],
     kickers: [[0.08, 1.05, 1.6], [0.78, 1.1, 1.6]],
-    gaps: [[0.47, 1.15, 1.8, 2.6]],
+    gaps: [[0.4, 1.15, 1.8, 2.6]],
     whoops: [[0.68, 0.72, 4, 0.24], [0.9, 0.95, 4, 0.2]],
     berms: [[0.3, 0.36, 0.75], [0.53, 0.58, 0.7]],
-    boosts: [0.03, 0.27, 0.41, 0.57],
+    // Into the first kicker; out of the canyon hairpin; on the shortcut, into its gap.
+    boosts: [0.02, 0.51],
     branches: [
       {
         from: 0.2, to: 0.6, label: "SHORTCUT", via: [11.5, -8.6, 11.4, -2.6, 7.6, 3.4],
         whoops: [[0.12, 0.26, 4, 0.26]],
         gaps: [[0.44, 1.2, 1.8, 3.2]],
+        boosts: [0.3],
       },
     ],
-  },
-  {
-    id: "neon-edge", name: "Neon Edge", tier: 4, laps: 3, cols: 134, rows: 88, cell: 0.45, seed: 55102077, city: true,
+  }),
+  wide({
+    id: "neon-edge", name: "Neon Edge", tier: 4, laps: 3, cell: 0.58, seed: 55102077, city: true,
     blurb: "Night at the city's edge: neon towers, two chicanes, banked sweepers, a jump over the rooftop gap.",
     dunes: { amp: 3.2, scale: 8.5, ridge: 0.86, wind: [1, 0.2], stretch: 3 },
     pts: [-22, -14, -10, -15.4, 0, -13.4, 5, -15.6, 11, -13.2, 20, -14.8, 25.4, -10, 24.6, -2.4, 19.4, 0.4, 15, -3.8, 10.6, -0.8, 13.4, 4.4, 20.4, 6.4, 25, 11, 21.6, 15.4, 12, 14.6, 4, 15.6, -3, 12.4, -6.6, 6, -11, 9.4, -16.4, 15, -23.2, 14, -25.6, 6.4, -23.8, -1, -25.6, -8],
@@ -121,14 +153,16 @@ export const TRACKS: TrackDef[] = [
     gaps: [[0.2, 1.25, 1.8, 3]],
     whoops: [[0.3, 0.34, 4, 0.22], [0.76, 0.8, 4, 0.22]],
     berms: [[0.09, 0.14, 0.7], [0.27, 0.31, 0.75], [0.44, 0.5, 0.8], [0.68, 0.72, 0.7], [0.94, 0.99, 0.65]],
-    boosts: [0.02, 0.24, 0.52, 0.88],
+    // Into the first kicker; out of the hairpin over the rooftop gap; the long straight into the big
+    // kicker; out of the last hairpin into the third.
+    boosts: [0.06, 0.165, 0.625, 0.79],
     branches: [
       {
         from: 0.36, to: 0.5, label: "SHORTCUT", via: [20.2, 2.6],
         kickers: [[0.25, 1.15, 1.6]],
       },
     ],
-  },
+  }),
 ];
 export const trackById = (id: string) => TRACKS.find((t) => t.id === id) ?? TRACKS[0]!;
 
@@ -206,10 +240,12 @@ export function buildTrack(def: TrackDef) {
   const HX = (def.cols * def.cell) / 2, HZ = (def.rows * def.cell) / 2;
   const d = def.dunes;
   t.noise({ seed: def.seed, amp: d.amp, scale: d.scale, octaves: 3, ridge: d.ridge, wind: d.wind, stretch: d.stretch });
-  // Down to the plinth at the edges (the course is a slab of sand on a table).
+  // The dunes ease down inside the rim, and the rim rises round the edge: a bank of sand that turns
+  // a car back (the race's soft wall pushes with it), rounded off to the plinth at the very edge.
   t.shape((x, z, h) => {
-    const ex = Math.min(1, (HX - Math.abs(x)) / 2.4), ez = Math.min(1, (HZ - Math.abs(z)) / 2.4), e = Math.max(0, Math.min(ex, ez));
-    return h * e * e * (3 - 2 * e);
+    const d = Math.min(HX - Math.abs(x), HZ - Math.abs(z)), e = Math.max(0, Math.min(1, (d - RIM_W) / 2.4));
+    const r = d <= 0.5 ? Math.max(0, d / 0.5) : d < RIM_W ? 1 - (d - 0.5) / (RIM_W - 0.5) : 0, rim = RIM_H * (d <= 0.5 ? r * (2 - r) : r * r * (3 - 2 * r));
+    return h * e * e * (3 - 2 * e) + rim;
   });
 
   // ---- the paths ----
@@ -351,7 +387,7 @@ export function buildTrack(def: TrackDef) {
   // in and out along it and blended into the sand past the shoulder (no lump at either end).
   for (const [u0, u1, h] of def.berms ?? []) {
     const a = idx(main, u0), n = ((idx(main, u1) - a + main.n) % main.n) + 1, b = (a + n - 1) % main.n;
-    const turn = main.T[a * 2]! * main.T[b * 2 + 1]! - main.T[a * 2 + 1]! * main.T[b * 2]! > 0 ? 1 : -1, fade = Math.min(8, n / 3), wide = half + 0.6;
+    const turn = main.T[a * 2]! * main.T[b * 2 + 1]! - main.T[a * 2 + 1]! * main.T[b * 2]! > 0 ? 1 : -1, fade = Math.min(16, n / 3), wide = half + 0.6;
     t.shape((x, z, y) => {
       near(x, z);
       if (NR[1] !== 0 || NR[0]! >= wide + 1.4) return y;
@@ -367,14 +403,14 @@ export function buildTrack(def: TrackDef) {
   const pads: number[] = [];
   for (const u of def.boosts ?? []) pads.push(0, idx(main, u));
   (def.branches ?? []).forEach((b, k) => b.boosts?.forEach((u) => pads.push(k + 1, idx(paths[k + 1]!, u))));
-  const PADS = Int32Array.from(pads), PAD_LEN = 2;
+  const PADS = Int32Array.from(pads), PAD_LEN = 3.2, PAD_W = TRACK_W / 2 - 0.45;
   /** The pad under NQ = [x, z], or −1. */
   function padQ() {
     const x = NQ[0]!, z = NQ[1]!;
     for (let k = 0; k < PADS.length; k += 2) {
       const p = paths[PADS[k]!]!, i = PADS[k + 1]!, dx = x - p.P[i * 2]!, dz = z - p.P[i * 2 + 1]!;
       const along = dx * p.T[i * 2]! + dz * p.T[i * 2 + 1]!, across = -dx * p.T[i * 2 + 1]! + dz * p.T[i * 2]!;
-      if (along > -PAD_LEN / 2 && along < PAD_LEN / 2 && across > -1.2 && across < 1.2) return k >> 1;
+      if (along > -PAD_LEN / 2 && along < PAD_LEN / 2 && across > -PAD_W && across < PAD_W) return k >> 1;
     }
     return -1;
   }
@@ -416,7 +452,7 @@ export function buildTrack(def: TrackDef) {
   // ---- gates on the loop ----
   const GATE = Int32Array.from(def.gates.map((u) => iAt(main, u)));
 
-  return { def, t, HX, HZ, paths, main, near, nearQ, NQ, NR, heightAt, GATE, PADS, PAD_LEN, padQ, ramps: Int32Array.from(ramps) };
+  return { def, t, HX, HZ, paths, main, near, nearQ, NQ, NR, heightAt, GATE, PADS, PAD_LEN, PAD_W, padQ, ramps: Int32Array.from(ramps) };
 }
 export type Track = ReturnType<typeof buildTrack>;
 

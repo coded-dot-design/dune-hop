@@ -34,9 +34,13 @@ try {
       return { status: game.getSnapshot().status, menu: !root.querySelector(".dh-menu").hidden, tracks: root.querySelectorAll(".dh-tracks button").length, canvas: r.width > 200 && r.height > 150, keys: keys.length > 4 && keys.every(Boolean), pad: !!root.querySelector(".dh-pad").offsetParent };
     });
     assert.deepEqual(m, { status: "idle", menu: true, tracks: 4, canvas: true, keys: true, pad: touch }, `${name}: the menu, four tracks, keys ≥ 44 px, the pad on touch only`);
-    // A track key: the countdown, then GO.
-    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-tracks button").click());
-    assert.equal((await snap(p)).phase, "count", `${name}: the countdown`);
+    // A track key only selects (the preview changes); START races it: the countdown, then GO.
+    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-tracks button")[1].click());
+    const picked = await sh(p, () => { const root = document.querySelector("[data-fizlet-host]").shadowRoot; return { status: game.getSnapshot().status, track: game.track, pressed: root.querySelectorAll(".dh-tracks button[aria-pressed=true]").length }; });
+    assert.deepEqual(picked, { status: "idle", track: "ridge-run", pressed: 1 }, `${name}: a track key selects, no race yet`);
+    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-tracks button")[0].click());
+    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-start").click());
+    assert.equal((await snap(p)).phase, "count", `${name}: START: the countdown`);
     await until(p, () => game.getSnapshot().phase === "race", null, `${name}: GO`);
     const s0 = await snap(p);
     if (!touch) {
@@ -56,6 +60,27 @@ try {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: gas.x, y: gas.y, id: 1 }] });
       await until(p, (a) => { const s = game.getSnapshot(); return Math.hypot(s.player.x - a.x, s.player.y - a.y) > 30; }, s0.player, `${name}: the pad's GAS drives`);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      // The steer pad (the default on a phone): left and right keys only, the four keys on the right.
+      const keysOf = () => p.evaluate(() => {
+        const root = document.querySelector("[data-fizlet-host]").shadowRoot, pad = root.querySelector(".bui-pad"), r = (e) => e.getBoundingClientRect();
+        const moves = [...pad.querySelectorAll(".bui-pad-move button")].map((b) => b.getAttribute("aria-label")), big = [...pad.querySelectorAll("button, .bui-stick")].every((b) => Math.min(r(b).width, r(b).height) >= 44);
+        return { moves, stick: !!pad.querySelector(".bui-stick"), acts: [...pad.querySelectorAll(".bui-pad-keys button small")].map((b) => b.textContent), big, h: Math.round(r(pad).height), top: Math.round(r(pad).top) };
+      });
+      const steerPad = await keysOf();
+      assert.deepEqual([steerPad.moves, steerPad.stick, steerPad.acts, steerPad.big], [["Left", "Right"], false, ["GAS", "BRAKE", "DRIFT", "BOOST"], true], `${name}: the steer pad (◀ ▶) and GAS · BRAKE · DRIFT · BOOST, keys ≥ 44 px`);
+      const right = await p.evaluate(() => { const b = document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".bui-pad-move button[aria-label=Right]").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+      const y0 = (await snap(p)).player.angle;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: gas.x, y: gas.y, id: 1 }, { x: right.x, y: right.y, id: 2 }] });
+      await until(p, (a) => Math.abs(game.getSnapshot().player.angle - a) > 0.3, y0, `${name}: GAS + ▶ on the steer pad turns the buggy`);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      // The pause card's STEERING key swaps to the stick (no layout shift), remembered on the device.
+      await sh(p, () => game.pause());
+      await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-padk").click());
+      const stickPad = await keysOf();
+      assert.deepEqual([stickPad.moves, stickPad.stick, stickPad.acts, stickPad.big], [[], true, ["GAS", "BRAKE", "DRIFT", "BOOST"], true], `${name}: the stick layout`);
+      assert.deepEqual([stickPad.h, stickPad.top], [steerPad.h, steerPad.top], `${name}: swapping layouts shifts nothing`);
+      assert.equal(await p.evaluate(() => localStorage.getItem("dune-hop:pad")), "stick", `${name}: the choice is remembered`);
+      await sh(p, () => game.resume());
     }
     const s1 = await snap(p);
     assert.ok(Math.hypot(s1.player.x - s0.player.x, s1.player.y - s0.player.y) > 20, `${name}: the buggy moved`);
@@ -127,7 +152,7 @@ try {
     assert.equal(await p.evaluate(() => game.engine.stats().frames), f0, "drop-in: no frames after Recall");
     await ctx.close();
   }
-  console.log("Dune Hop: menu, countdown, keyboard, mouse, touch pad, pause/resume, a full race to the result and a track best, reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
+  console.log("Dune Hop: menu (select, then START), countdown, keyboard, mouse, both touch layouts (steer pad and stick, remembered), pause/resume, a full race to the result and a track best, reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
 } finally {
   await browser.close();
   await server.close();

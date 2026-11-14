@@ -17,20 +17,27 @@ grow into a full game.
 turn), **Ridge Run** (over a ridge and off the crest, a chicane, a banked hairpin, a big kicker),
 **Split Canyon** (the long way round, or the shortcut over the canyon gap) and **Neon Edge** (always
 night, at the city's edge: towers, chicanes, banked sweepers, a shortcut with a jump). Three laps
-each, gates in order. Your best time per track is kept on this device.
+each, gates in order, on wide roads; a sand rim round each table turns you back before you go over.
+Pick a track (the preview shows it), then START. Your best time per track is kept on this device.
 
 **Rivals:** VOLT, MIRAGE and RUST drive the same terrain on the same physics (`@fzlt/core/drive`)
 with a waypoint pilot: they look ahead along the line, brake for the bends, level the nose in the
-air, and pick the shortcut or the long way each lap. They bump, and they crash too.
+air, and pick the shortcut or the long way each lap. They see the other cars: they brake behind one
+they can't pass and step round it, and RUST leans on anyone in reach. Cars collide; hit a car while it
+drifts and it spins out. They crash too.
 
 **Stunts:** every landing is judged by its airtime and how far off the slope it came down. Clean
 landings score and build a combo; sketchy ones score once; nose it in or roll it and you tumble back
-to the last gate. Clean landings fill **NITRO**; pink **boost pads** on the track shove anyone over them.
+to the last gate. **Drift** (Shift, or DRIFT on a phone): the handbrake steps the tail out; hold the
+slide and the drift points bank when it straightens, or are lost to a hit or a crash. Clean landings
+and drifts fill **NITRO**; pink **boost pads**, on straights out of the hairpins and into the
+kickers, shove anyone over them.
 
-**Controls.** ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Space nitro; in the air gas
+**Controls.** ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro; in the air gas
 lifts the nose and brake dips it. P pause, V camera (chase or the whole table), M sound, R restart,
-T tracks. A mouse: hold the course for gas, drag to steer. Phones: GAS, BRAKE and NITRO on the right,
-steer on the left. The look follows the page's `<html data-theme>`.
+T tracks. A mouse: hold the course for gas, drag to steer. Phones: GAS, BRAKE, DRIFT and BOOST under
+the right thumb; the left thumb steers on a ◀ ▶ pad or a stick (STEERING on the pause card; the
+choice is kept on the device). The look follows the page's `<html data-theme>`.
 
 The race is deterministic and seeded: the same seed and inputs give the same race, bit for bit
 (the course uses only + − × ÷ and square roots), so online races can come later.

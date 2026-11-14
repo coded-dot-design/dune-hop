@@ -1,68 +1,99 @@
-// Dune Hop's race, headless (tests/race.test.mjs plays it with no browser): four buggies on one
-// track, each @fzlt/core/drive on the track's terrain. Car 0 is yours; 1..3 are rivals driven by a
-// waypoint AI (look ahead along the line, steer at it, hold the speed the line allows, level the nose
-// in the air; a seeded pace and, each lap, a seeded pick of the shortcut). A countdown, then laps
+// Dune Hop's race, headless (tests/race.test.mjs plays it with no browser): N buggies on one track,
+// each @fzlt/core/drive on the track's terrain. Cars 0..humans−1 are people (inputs per car in `IN`,
+// or the autopilot per car in `AUTO`); the rest are rivals driven by a waypoint AI (look ahead along
+// the line, steer at it, hold the speed the line allows, level the nose in the air; a seeded pace and,
+// each lap, a seeded pick of the shortcut; it sees the other cars: it brakes behind one it can't
+// pass, steps out round it, and RUST leans on anyone in reach). A handbrake drift on each person's
+// car scores drift points; a hit while drifting spins you out (./handling.ts). A countdown, then laps
 // through the gates in order; a landing too far off the slope, a rollover or a drive off the table
-// crashes: a short tumble, then back in at the last gate. Boost pads kick anyone who drives over them;
-// your clean landings fill NITRO (the air scorer is ./stunt.ts). Cars bump each other. The race ends
-// when you take the line on the last lap (`finish()` ends it at once); the others run to the line, then
-// everyone coasts to a stop so the page can settle.
+// crashes: a short tumble, then back in at the last gate; soft walls at the table's edge turn a car
+// back before it goes over. Boost pads kick anyone who drives over them; clean landings and banked
+// drifts fill NITRO (the air scorer is ./stunt.ts). The race ends when every person has taken the
+// line on the last lap (`finish()` ends it at once); the others run to the line, then everyone
+// coasts to a stop so the page can settle.
 // Deterministic: the seed, the inputs and the fixed step decide everything (./math.ts, no Math.random,
 // no builtin trig), and a step allocates nothing (typed arrays only).
 import { drive, type Drive } from "@fzlt/core/drive";
 import { hypot } from "@fzlt/core/steer";
 import { seeded } from "@fzlt/core/kernel";
 import { buildTrack, TRACK_W, type Track, type TrackDef } from "./tracks.ts";
-import { stunt, BUMP, CLEAN, CB } from "./stunt.ts";
+import { stunt, BUMP, CLEAN, CB, type Stunt } from "./stunt.ts";
+import { handling, D_AMT, D_ANG, D_SPD } from "./handling.ts";
 import { atan2, sincos, SC as TRIG } from "./math.ts";
 
-export const CARS = 4, COUNT = 0, RUN = 1, DONE = 2;
+export const CARS = 4, MAX_CARS = 6, COUNT = 0, RUN = 1, DONE = 2;
 /** Car phases. */
 export const DRIVE = 0, CRASH = 1, FIN = 2;
 /** Events (type, car, value): read and cleared each step. */
-export const E_GO = 1, E_GATE = 2, E_LAP = 3, E_LAND = 4, E_CRASH = 5, E_RESPAWN = 6, E_FINISH = 7, E_BOOST = 8, E_AIR = 9, E_COUNT = 10, E_WRONG = 11, E_BUMP = 12, E_DONE = 13, E_NITRO = 14;
+export const E_GO = 1, E_GATE = 2, E_LAP = 3, E_LAND = 4, E_CRASH = 5, E_RESPAWN = 6, E_FINISH = 7, E_BOOST = 8, E_AIR = 9, E_COUNT = 10, E_WRONG = 11, E_BUMP = 12, E_DONE = 13, E_NITRO = 14, E_DRIFT = 15, E_DRIFT_LOST = 16, E_SPIN = 17;
+/** The rivals: a pace, and how they treat other cars (0 steps round them, 1 leans on them). */
 export const RIVALS = [
-  { name: "VOLT", pace: 0.97 },
-  { name: "MIRAGE", pace: 0.94 },
-  { name: "RUST", pace: 0.9 },
+  { name: "VOLT", pace: 0.97, agg: 0 },
+  { name: "MIRAGE", pace: 0.94, agg: 0.4 },
+  { name: "RUST", pace: 0.9, agg: 1 },
+  { name: "DUNE", pace: 0.92, agg: 0.2 },
+  { name: "ECHO", pace: 0.88, agg: 0.6 },
 ];
-const TUMBLE = 1.3, COUNTDOWN = 3, BOOST_T = 1.1, BOOST_A = 15, BOOST_TOP = 16.5, NITRO_BURN = 0.45, SAND_DRAG = 0.55, RAD = 0.82;
+const TUMBLE = 1.3, COUNTDOWN = 3, BOOST_T = 0.9, BOOST_A = 12, BOOST_TOP = 15, NITRO_BURN = 0.45, SAND_DRAG = 0.55;
+/** The soft wall: this far in from the table's edge it starts to push a car back. */
+const WALL = 3.2, SPIN_T = 1.1;
 // Per car state (Float64Array, K slots each).
-const K = 24, FIXED = 1 / 60;
+export const K = 32;
+const FIXED = 1 / 60;
 export const PH = 0, NEXT = 1, LAST = 2, LAP = 3, PI_ = 4, IDX = 5, U = 6, PROG = 7, DIST = 8, FT = 9, CT = 10, BOOST = 11, PP = 12, LAPT = 13, BEST = 14, WRONG = 15, PLACE = 16, PAIR = 17, SHORT = 18, PACE = 19, OFF = 20, CRASHES = 21, RACED = 22, PARK = 23;
+/** Spin-out time left, its rate; the AI's lateral offset; drift points pending, drift seconds, total drift points; aggression; a person. */
+export const SPIN = 24, SPINR = 25, OFFS = 26, DPTS = 27, DTIME = 28, DTOTAL = 29, AGG = 30, HUMAN = 31;
+/** Inputs per car in IN (IK slots): throttle, brake, steer, nitro, drift. */
+export const IK = 5;
 
 const CAR_OPTS = {
-  kind: "car" as const, wheels: [0.8, -0.64, 0.8, 0.64, -0.74, -0.64, -0.74, 0.64], radius: 0.36, rest: 0.34, travel: 0.3,
-  accel: 9, top: 12, grip: 1.08, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
+  kind: "car" as const, wheels: [0.8, -0.78, 0.8, 0.78, -0.74, -0.76, -0.74, 0.76], radius: 0.36, rest: 0.34, travel: 0.3,
+  accel: 9, top: 12, grip: 1.08, drift: 0.2, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
   surfaces: [0.92, 1.08, 1.08],
 };
 
-export function createRace(def: TrackDef, seed = 1) {
+export interface RaceOptions {
+  /** People (cars 0..humans−1; default 1). */
+  humans?: number;
+  /** AI rivals after them (default 3). */
+  rivals?: number;
+}
+
+export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
   const tr: Track = buildTrack(def), t = tr.t, main = tr.main, NG = tr.GATE.length, LAPS = def.laps;
+  const HUM = Math.max(1, Math.min(2, ro.humans ?? 1)), NC = Math.min(MAX_CARS, HUM + Math.max(0, ro.rivals ?? 3));
+  /** Rival profile of car c (people: none). */
+  const rival = (c: number) => RIVALS[(c - HUM) % RIVALS.length]!;
   const cars: Drive[] = [];
-  for (let c = 0; c < CARS; c++) cars.push(drive(t, { ...CAR_OPTS, top: c ? 12 * (0.985 + RIVALS[c - 1]!.pace * 0.02) : 12, id: c }));
+  for (let c = 0; c < NC; c++) cars.push(drive(t, { ...CAR_OPTS, top: c >= HUM ? 12 * (0.985 + rival(c).pace * 0.02) : 12, id: c }));
   // Each drive's state, read straight from its Float64Array (the one `landing` is a view into): yaw 0,
   // air 6, speed 8. Its getters return fresh numbers, and with four cars (four sets of getters) the
   // optimiser can't inline them, so every read would allocate; the arrays never do.
   const DS = cars.map((v) => new Float64Array(v.landing.buffer));
-  const C = new Float64Array(CARS * K);
-  /** Race: [phase, clock (from GO), countdown left, done time, seed, finish order count, time after done, autopilot on]. */
-  const R = new Float64Array(8);
+  const C = new Float64Array(NC * K);
+  /** Race: [phase, clock (from GO), countdown left, done time, seed, finish order count, time after done, any autopilot, the people's best distance raced]. */
+  const R = new Float64Array(9);
+  /** Inputs per car (IK each) and the autopilot per car (rivals always). */
+  const IN = new Float64Array(NC * IK), AUTO = new Uint8Array(NC), ON = new Uint8Array(NC);
+  const hd = handling(cars, DS);
   /** Per car: where the body is drawn and how it is turned (the drive's, or the tumble's). */
-  const pos = new Float64Array(CARS * 3), rot = new Float64Array(CARS * 3), TV = new Float64Array(CARS * 6);
+  const pos = new Float64Array(NC * 3), rot = new Float64Array(NC * 3), TV = new Float64Array(NC * 6);
   /** The finish order: car ids. */
-  const order = new Int32Array(CARS);
+  const order = new Int32Array(NC);
   /** Standings now (car ids, first to last). */
-  const rank = new Int32Array(CARS);
+  const rank = new Int32Array(NC);
   /** Each car's finish time (0: not yet). */
-  const fin = new Float64Array(CARS);
-  const sc = stunt({ minAir: 0.3, clean: 0.2, perSec: 100 });
-  /** Your nitro, 0..1. */
-  const N = new Float64Array(2);
-  const ev = new Float64Array(48);
+  const fin = new Float64Array(NC);
+  /** The air scorer, per person. */
+  const scs: Stunt[] = [];
+  for (let c = 0; c < HUM; c++) scs.push(stunt({ minAir: 0.3, clean: 0.2, perSec: 100 }));
+  const sc = scs[0]!;
+  /** Nitro per car: [0..1, burning]. */
+  const N = new Float64Array(NC * 2);
+  const ev = new Float64Array(72);
   let nev = 0, rnd = seeded(seed);
-  const emit = (type: number, car: number, val: number) => nev < 16 && ((ev[nev * 3] = type), (ev[nev * 3 + 1] = car), (ev[nev * 3 + 2] = val), nev++);
-  const GX = new Float64Array(CARS * 2);
+  const emit = (type: number, car: number, val: number) => nev < 24 && ((ev[nev * 3] = type), (ev[nev * 3 + 1] = car), (ev[nev * 3 + 2] = val), nev++);
+  const GX = new Float64Array(NC * 2);
 
   /** Place car c `back` units behind main index i, `side` across, facing along the line. */
   function place(c: number, i: number, back: number, side: number) {
@@ -85,23 +116,26 @@ export function createRace(def: TrackDef, seed = 1) {
     fin.fill(0);
     order.fill(-1);
     N.fill(0);
-    sc.reset();
+    IN.fill(0);
+    for (const s of scs) s.reset();
+    hd.reset();
     nev = 0;
-    // The grid: two by two behind the line; you start at the back.
-    const g0 = main.n - 1;
-    const slots = [[3.2, -0.95], [3.2, 0.95], [6.6, -0.95], [6.6, 0.95]];
-    for (let c = 0; c < CARS; c++) {
-      const s = slots[c === 0 ? 3 : c - 1]!, o = c * K;
+    // The grid: two by two behind the line; the rivals in front, the people at the back.
+    const g0 = main.n - 1, w = TRACK_W * 0.27;
+    for (let c = 0; c < NC; c++) {
+      const slot = c >= HUM ? c - HUM : NC - HUM + c, o = c * K, s = [3.4 + (slot >> 1) * 3.6, slot & 1 ? w : -w];
       place(c, g0, s[0]!, s[1]!);
       GX[c * 2] = cars[c]!.pos[0]!;
       GX[c * 2 + 1] = cars[c]!.pos[2]!;
       C[o + NEXT] = 1;
       C[o + IDX] = (g0 - Math.round(s[0]! / 0.5) + main.n) % main.n;
-      C[o + PACE] = c ? RIVALS[c - 1]!.pace * (0.985 + rnd() * 0.03) : 1;
-      C[o + SHORT] = c ? (rnd() < 0.5 ? 1 : 0) : 1;
+      C[o + HUMAN] = c < HUM ? 1 : 0;
+      C[o + PACE] = c >= HUM ? rival(c).pace * (0.985 + rnd() * 0.03) : 1;
+      C[o + AGG] = c >= HUM ? rival(c).agg : 0;
+      C[o + SHORT] = c >= HUM ? (rnd() < 0.5 ? 1 : 0) : 1;
       rank[c] = c;
     }
-    for (let c = 0; c < CARS; c++) locate(c);
+    for (let c = 0; c < NC; c++) locate(c);
     ranks();
   }
 
@@ -155,7 +189,9 @@ export function createRace(def: TrackDef, seed = 1) {
     C[o + CT] = 0;
     C[o + CRASHES] = C[o + CRASHES]! + 1;
     C[o + BOOST] = 0;
-    if (!c) sc.crash();
+    if (c < HUM) scs[c]!.crash();
+    C[o + SPIN] = 0;
+    loseDrift(c);
     pos.set(v.pos, c * 3);
     rot.set(v.rot, c * 3);
     const T = c * 6;
@@ -185,19 +221,48 @@ export function createRace(def: TrackDef, seed = 1) {
     }
   }
 
-  /** The AI (and your autopilot): out = [throttle, brake, steer, nitro]. */
+  /** A drift's points are gone (a crash, a spin, a hit). */
+  function loseDrift(c: number) {
+    const o = c * K;
+    if (C[o + DPTS]! >= 10) emit(E_DRIFT_LOST, c, Math.round(C[o + DPTS]!));
+    C[o + DPTS] = C[o + DTIME] = 0;
+  }
+  /** Spun out by a hit: a second or so of spinning on loose tyres, then back to it. */
+  function spin(c: number, dir: number) {
+    const o = c * K;
+    if (C[o + PH] !== DRIVE || C[o + SPIN]! > 0) return;
+    C[o + SPIN] = SPIN_T;
+    C[o + SPINR] = dir < 0 ? -7.5 : 7.5;
+    C[o + BOOST] = 0;
+    loseDrift(c);
+    emit(E_SPIN, c, 0);
+  }
+  /** A contact (handling.ts): a drifting car that is hit spins out; so does one hit hard on its tail. */
+  function onHit(a: number, b: number, tail: number) {
+    const j = hd.HIT[0]!;
+    for (let k = 0; k < 2; k++) {
+      const c = k ? b : a, o = c * K, drifting = hd.DR[c * 4 + D_AMT]! > 0.35 || Math.abs(hd.DR[c * 4 + D_ANG]!) > 0.42;
+      if ((drifting && j > 1.1) || (k && tail && j > 4.5)) spin(c, hd.DR[c * 4 + D_ANG]! >= 0 ? 1 : -1);
+      else if (C[o + DPTS]! > 0 && j > 1.5) loseDrift(c);
+    }
+    if (j > 1.5 && (a < HUM || b < HUM)) emit(E_BUMP, a < HUM ? b : a, j);
+  }
+
+  /** The AI (and a person's autopilot): out = [throttle, brake, steer, nitro]. It follows the planned
+   *  route and watches the cars ahead: brakes behind one it can't pass, steps round it, or (RUST)
+   *  leans into it. */
   function pilot(c: number, out: Float64Array) {
     const o = c * K, v = cars[c]!;
     let pi = C[o + PI_]!, i = C[o + IDX]!;
     // Look ahead along the planned route (the shortcut when this lap's plan says so).
-    const sp = DS[c]![8]!, look = 3.2 + Math.max(0, sp) * 0.34;
+    const sp = DS[c]![8]!, look = 3.4 + Math.max(0, sp) * 0.36;
     let want = 99;
     const steps = Math.ceil(look / 0.5), slow = Math.ceil((2 + Math.max(0, sp) * 0.7) / 0.5);
-    let tx = 0, tz = 0;
+    let tx = 0, tz = 0, nx = 0, nz = 0;
     for (let k = 0; k <= Math.max(steps, slow); k++) {
       const p = tr.paths[pi]!;
       if (k <= slow) want = Math.min(want, p.V[i]!);
-      if (k === steps) (tx = p.P[i * 2]!), (tz = p.P[i * 2 + 1]!);
+      if (k === steps) (tx = p.P[i * 2]!), (tz = p.P[i * 2 + 1]!), (nx = -p.T[i * 2 + 1]!), (nz = p.T[i * 2]!);
       // Next point on the route.
       if (pi === 0) {
         let took = false;
@@ -214,11 +279,31 @@ export function createRace(def: TrackDef, seed = 1) {
     }
     TRIG[2] = DS[c]![0]!;
     sincos();
-    const fx = TRIG[1]!, fz = -TRIG[0]!, ux = tx - v.pos[0]!, uz = tz - v.pos[2]!, ul = hypot(ux, uz) || 1;
+    const fx = TRIG[1]!, fz = -TRIG[0]!;
+    // The other cars: the nearest one ahead in reach decides the line.
+    let off = 0, near = 99;
+    for (let d = 0; d < NC; d++) {
+      if (d === c || C[d * K + PH] !== DRIVE) continue;
+      const dx = CP[d * 4]! - v.pos[0]!, dz = CP[d * 4 + 1]! - v.pos[2]!, along = dx * fx + dz * fz, across = dx * -fz + dz * fx;
+      if (along < 0.5 || along > 9 || across > 3.4 || across < -3.4 || along > near) continue;
+      near = along;
+      const dv = CP[d * 4 + 2]! * fx + CP[d * 4 + 3]! * fz;
+      const attack = C[o + AGG]! >= 1 || (C[o + AGG]! > 0 && (hd.DR[d * 4 + D_AMT]! > 0.3 || C[d * K + HUMAN]! > 0) && C[o + AGG]! * 9 > along);
+      if (attack && along < 7) off = Math.max(-2.2, Math.min(2.2, across));
+      else {
+        off = across >= 0 ? across - 2.2 : across + 2.2;
+        if (along < 3.4 && across < 1.5 && across > -1.5 && dv < sp) want = Math.min(want, Math.max(3, dv - 0.4));
+      }
+    }
+    const lim = TRACK_W / 2 - 1.1;
+    C[o + OFFS] = C[o + OFFS]! + (Math.max(-lim, Math.min(lim, off)) - C[o + OFFS]!) * 0.06;
+    tx += nx * C[o + OFFS]!;
+    tz += nz * C[o + OFFS]!;
+    const ux = tx - v.pos[0]!, uz = tz - v.pos[2]!, ul = hypot(ux, uz) || 1;
     const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul;
     want *= C[o + PACE]!;
-    // Racing a person: a little rubber band (a rival well behind pushes, one well ahead eases off).
-    if (c && !R[7]) want *= 1 + Math.max(-0.06, Math.min(0.07, (C[RACED]! - C[o + RACED]!) / 50));
+    // Racing people: a little rubber band (a rival well behind pushes, one well ahead eases off).
+    if (c >= HUM && !R[7]) want *= 1 + Math.max(-0.06, Math.min(0.07, (R[8]! - C[o + RACED]!) / 50));
     out[2] = dot < 0 ? (cross < 0 ? -1 : 1) : Math.max(-1, Math.min(1, cross * 3));
     const p = v.rot[2]!, rate = (p - C[o + PP]!) * 60;
     C[o + PP] = p;
@@ -231,17 +316,29 @@ export function createRace(def: TrackDef, seed = 1) {
     } else {
       out[0] = sp < want ? 1 : sp < want + 0.8 ? 0.3 : 0;
       out[1] = sp > want + 1.6 ? 0.7 : 0;
-      if (!c && N[0]! > 0.3 && want > 11 && Math.abs(cross) < 0.12) out[3] = 1;
+      if (c < HUM && N[c * 2]! > 0.3 && want > 11 && Math.abs(cross) < 0.12) out[3] = 1;
     }
     return out;
   }
 
-  const AI = new Float64Array(4);
-  /** Advance dt. Your inputs: throttle 0..1, brake 0..1, steer −1..1, nitro 0/1 (`auto`: the autopilot
-   *  drives you). Returns true while anything moves. */
-  function step(dt: number, th: number, br: number, st: number, ni: number, auto = false) {
-    let moving = false;
-    R[7] = auto ? 1 : 0;
+  const AI = new Float64Array(4), DT = new Float64Array(1);
+  /** Every car's [x, z, vx, vz] as the step began: what the AI sees of the others (typed reads only). */
+  const CP = new Float64Array(NC * 4);
+  /** Set person c's inputs (or write IN directly): throttle 0..1, brake 0..1, steer −1..1, nitro 0/1, drift 0..1. */
+  function input(c: number, th: number, br: number, st: number, ni: number, dr = 0) {
+    const q = c * IK;
+    IN[q] = th; IN[q + 1] = br; IN[q + 2] = st; IN[q + 3] = ni; IN[q + 4] = dr;
+  }
+  /** Advance dt: people drive from IN (or the autopilot when AUTO[c]); the rivals from the AI.
+   *  Returns true while anything moves. */
+  function step(dt: number) {
+    DT[0] = dt;
+    for (let c = 0; c < NC; c++) (CP[c * 4] = pos[c * 3]!), (CP[c * 4 + 1] = pos[c * 3 + 2]!), (CP[c * 4 + 2] = cars[c]!.vel[0]!), (CP[c * 4 + 3] = cars[c]!.vel[2]!);
+    let moving = false, anyAuto = 0;
+    for (let c = 0; c < HUM; c++) anyAuto |= AUTO[c]!;
+    R[7] = anyAuto;
+    R[8] = -1e9;
+    for (let c = 0; c < HUM; c++) R[8] = Math.max(R[8]!, C[c * K + RACED]!);
     if (R[0] === COUNT) {
       const before = Math.ceil(R[2]!);
       R[2] = R[2]! - dt;
@@ -252,41 +349,52 @@ export function createRace(def: TrackDef, seed = 1) {
       R[1] = R[1]! + dt;
       if (R[0] === DONE) R[6] = R[6]! + dt;
     }
-    for (let c = 0; c < CARS; c++) {
-      const o = c * K, v = cars[c]!;
+    for (let c = 0; c < NC; c++) {
+      const o = c * K, v = cars[c]!, you = c < HUM, q = c * IK;
       if (C[o + PH] === CRASH) {
         v.set(0, 0, 0);
         tumble(c, dt);
         moving = true;
         continue;
       }
-      // Inputs: held at the line in the countdown; the AI; you; coasting to a stop after the line.
-      let a0 = 0, a1 = 0, a2 = 0, a3 = 0;
-      // Past the line: a cool-down at half pace, then (once your race is over) a stop.
-      const cool = C[o + PH] === FIN, stopping = R[0] === DONE && (R[6]! > 20 || (cool && R[6]! > 3) || (!c && cool));
+      // Inputs: held at the line in the countdown; the AI; a person; coasting to a stop after the line.
+      let a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0;
+      // Past the line: a cool-down at half pace, then (once the people's race is over) a stop.
+      const cool = C[o + PH] === FIN, stopping = R[0] === DONE && (R[6]! > 20 || (cool && R[6]! > 3) || (you && cool));
       if (stopping && C[o + PARK]! >= 1) continue;
       if (R[0] === COUNT) a0 = a1 = a2 = 0;
       else if (stopping) (a1 = DS[c]![8]! > 0.3 ? 1 : 0), (a0 = DS[c]![8]! < -0.3 ? 0.5 : 0), (a2 = 0);
       else if (cool) pilot(c, AI), (a0 = AI[0]! * 0.45), (a1 = AI[1]!), (a2 = AI[2]!);
-      else if (c || auto) pilot(c, AI), (a0 = AI[0]!), (a1 = AI[1]!), (a2 = AI[2]!), (a3 = AI[3]!);
-      else (a0 = th), (a1 = br), (a2 = st), (a3 = ni);
-      v.input[0] = a0; v.input[1] = a1; v.input[2] = a2; v.input[3] = 0;
+      else if (!you || AUTO[c]) pilot(c, AI), (a0 = AI[0]!), (a1 = AI[1]!), (a2 = AI[2]!), (a3 = AI[3]!);
+      else (a0 = IN[q]!), (a1 = IN[q + 1]!), (a2 = IN[q + 2]!), (a3 = IN[q + 3]!), (a4 = IN[q + 4]!);
+      // Spun out: no say for a moment, loose tyres, the body turning.
+      if (C[o + SPIN]! > 0) {
+        C[o + SPIN] = Math.max(0, C[o + SPIN]! - dt);
+        (a0 = 0), (a1 = 0.25), (a2 = 0), (a3 = 0), (a4 = 1);
+      }
+      v.input[0] = a0; v.input[1] = a1; v.input[2] = a2; v.input[3] = a4;
       const wasAir = DS[c]![6]!;
       // The fixed step as a constant: a double passed to a call that isn't inlined is boxed (allocated).
       if (v.step(dt === FIXED ? FIXED : dt)) moving = true;
+      if (C[o + SPIN]! > 0) {
+        const y = DS[c]![0]! + C[o + SPINR]! * dt;
+        DS[c]![0] = y;
+        v.rot[1] = y;
+        C[o + SPINR] = C[o + SPINR]! * (1 - 1.6 * dt);
+      } else (hd.IO[0] = a4), (hd.IO[1] = a2), (hd.IO[2] = dt), hd.drift(c);
       // On the grid: held where it was placed (no creeping down a slope before the lights).
       if (R[0] === COUNT) (v.pos[0] = GX[c * 2]!), (v.pos[2] = GX[c * 2 + 1]!), (v.vel[0] = v.vel[2] = 0);
       // Boost (a pad's, or your nitro): a push along the heading, up to a higher top speed.
       let push = 0;
       if (C[o + BOOST]! > 0) (C[o + BOOST] = Math.max(0, C[o + BOOST]! - dt)), (push = 1);
-      if (!c && a3 && N[0]! > 0 && R[0] === RUN && C[o + PH] === DRIVE) {
-        N[0] = Math.max(0, N[0]! - NITRO_BURN * dt);
+      if (you && a3 && N[c * 2]! > 0 && R[0] === RUN && C[o + PH] === DRIVE) {
+        N[c * 2] = Math.max(0, N[c * 2]! - NITRO_BURN * dt);
         push = 1;
-        if (!N[1]) (N[1] = 1), emit(E_NITRO, 0, 1);
-      } else if (!c) N[1] = 0;
+        if (!N[c * 2 + 1]) (N[c * 2 + 1] = 1), emit(E_NITRO, c, 1);
+      } else if (you) N[c * 2 + 1] = 0;
       if (push && DS[c]![6]! === 0 && hypot(v.vel[0]!, v.vel[2]!) < BOOST_TOP) {
         TRIG[2] = DS[c]![0]!;
-    sincos();
+        sincos();
         const fx = TRIG[1]!, fz = -TRIG[0]!;
         v.vel[0] = v.vel[0]! + fx * BOOST_A * dt;
         v.vel[2] = v.vel[2]! + fz * BOOST_A * dt;
@@ -297,6 +405,9 @@ export function createRace(def: TrackDef, seed = 1) {
         v.vel[0] = v.vel[0]! * k;
         v.vel[2] = v.vel[2]! * k;
       }
+      // The soft wall: near the table's edge a car is turned back (on the ground or in the air).
+      wall(c, 0);
+      wall(c, 2);
       // Stopped after the race: parked (no more steps, so the page can settle).
       if (stopping) {
         if (DS[c]![6]! === 0 && Math.abs(DS[c]![8]!) < 0.4) (C[o + PARK] = C[o + PARK]! + dt), C[o + PARK]! >= 0.5 && (C[o + PARK] = 1);
@@ -307,12 +418,12 @@ export function createRace(def: TrackDef, seed = 1) {
       if (wasAir === 0 && DS[c]![6]! > 0) emit(E_AIR, c, 0);
       if (DS[c]![6]! > 0) C[o + PAIR] = DS[c]![6]!;
       if (R[0] === COUNT) continue;
-      // A landing: yours is judged by the scorer (the drive already crashed it when it was too far off).
-      if (wasAir > 0 && DS[c]![6]! === 0 && !v.crashed && !c) {
-        const k = sc.land(C[o + PAIR]!, v.landing[1]!);
+      // A landing: a person's is judged by the scorer (the drive already crashed it when it was too far off).
+      if (wasAir > 0 && DS[c]![6]! === 0 && !v.crashed && you) {
+        const s = scs[c]!, k = s.land(C[o + PAIR]!, v.landing[1]!);
         if (k !== BUMP) {
-          N[0] = Math.min(1, N[0]! + (k === CLEAN ? 0.1 + 0.05 * Math.min(4, sc.S[CB]!) : 0.04));
-          emit(E_LAND, 0, k);
+          N[c * 2] = Math.min(1, N[c * 2]! + (k === CLEAN ? 0.1 + 0.05 * Math.min(4, s.S[CB]!) : 0.04));
+          emit(E_LAND, c, k);
         }
       }
       if (v.crashed) {
@@ -324,6 +435,7 @@ export function createRace(def: TrackDef, seed = 1) {
         continue;
       }
       locate(c);
+      if (you) driftScore(c);
       // A pad under the wheels.
       tr.NQ[0] = v.pos[0]!;
       tr.NQ[1] = v.pos[2]!;
@@ -331,12 +443,12 @@ export function createRace(def: TrackDef, seed = 1) {
         if (C[o + BOOST]! < BOOST_T - 0.2) emit(E_BOOST, c, 0);
         C[o + BOOST] = BOOST_T;
       }
-      // Wrong way (yours): heading back along the line for a second.
-      if (!c) {
+      // Wrong way (a person's): heading back along the line for a second.
+      if (you) {
         const p = tr.paths[C[o + PI_]!]!, i = C[o + IDX]!, along = v.vel[0]! * p.T[i * 2]! + v.vel[2]! * p.T[i * 2 + 1]!;
         const was = C[o + WRONG]!;
         C[o + WRONG] = along < -1.5 ? was + dt : 0;
-        if (was < 1 && C[o + WRONG]! >= 1) emit(E_WRONG, 0, 0);
+        if (was < 1 && C[o + WRONG]! >= 1) emit(E_WRONG, c, 0);
       }
       // The next gate: through it when within reach of its centre.
       const g = C[o + NEXT]! % NG, gi = tr.GATE[g]!;
@@ -349,7 +461,7 @@ export function createRace(def: TrackDef, seed = 1) {
           C[o + BEST] = C[o + BEST]! ? Math.min(C[o + BEST]!, lt) : lt;
           C[o + LAP] = C[o + LAP]! + 1;
           // This lap's route (the rivals): the shortcut or the long way, seeded.
-          if (c) C[o + SHORT] = rnd() < 0.55 ? 1 : 0;
+          if (!you) C[o + SHORT] = rnd() < 0.55 ? 1 : 0;
           if (C[o + NEXT]! > NG * LAPS) {
             C[o + PH] = FIN;
             C[o + FT] = R[1]!;
@@ -357,48 +469,60 @@ export function createRace(def: TrackDef, seed = 1) {
             order[R[5]!] = c;
             R[5] = R[5]! + 1;
             emit(E_FINISH, c, R[5]!);
-            if (!c && R[0] === RUN) (R[0] = DONE), (R[3] = R[1]!), emit(E_DONE, 0, R[5]!);
+            if (you && R[0] === RUN && peopleDone()) (R[0] = DONE), (R[3] = R[1]!), emit(E_DONE, 0, C[PLACE]!);
           } else emit(E_LAP, c, C[o + LAP]!);
         } else emit(E_GATE, c, g);
         locate(c);
       }
     }
-    if (R[0] !== COUNT) bump(dt);
+    if (R[0] !== COUNT) {
+      for (let c = 0; c < NC; c++) ON[c] = C[c * K + PH] === DRIVE ? 1 : 0;
+      hd.contact(ON, onHit);
+      for (let c = 0; c < NC; c++) pos.set(cars[c]!.pos, c * 3), rot.set(cars[c]!.rot, c * 3);
+    }
     ranks();
+    if (R[0] === DONE && nev) for (let k = 0; k < nev; k++) if (ev[k * 3] === E_DONE) ev[k * 3 + 2] = C[PLACE]!;
     return moving || R[0] !== DONE || !resting();
   }
-  /** Cars bump: pushed apart, the closing speed taken out (a little bounce). */
-  function bump(dt: number) {
-    for (let a = 0; a < CARS; a++)
-      for (let b = a + 1; b < CARS; b++) {
-        if (C[a * K + PH] !== DRIVE || C[b * K + PH] !== DRIVE) continue;
-        const A = cars[a]!, B = cars[b]!, dx = B.pos[0]! - A.pos[0]!, dz = B.pos[2]! - A.pos[2]!, dy = B.pos[1]! - A.pos[1]!, d = hypot(dx, dz);
-        if (d >= RAD * 2 || d < 1e-6 || dy > 0.9 || dy < -0.9) continue;
-        const nx = dx / d, nz = dz / d, push = (RAD * 2 - d) / 2;
-        A.pos[0] = A.pos[0]! - nx * push; A.pos[2] = A.pos[2]! - nz * push;
-        B.pos[0] = B.pos[0]! + nx * push; B.pos[2] = B.pos[2]! + nz * push;
-        const rv = (B.vel[0]! - A.vel[0]!) * nx + (B.vel[2]! - A.vel[2]!) * nz;
-        if (rv < 0) {
-          const j = -rv * 0.65;
-          A.vel[0] = A.vel[0]! - nx * j; A.vel[2] = A.vel[2]! - nz * j;
-          B.vel[0] = B.vel[0]! + nx * j; B.vel[2] = B.vel[2]! + nz * j;
-          if (j > 1.5 && (a === 0 || b === 0)) emit(E_BUMP, a === 0 ? b : a, j);
-        }
-        pos.set(A.pos, a * 3);
-        pos.set(B.pos, b * 3);
-        void dt;
+  function peopleDone() {
+    for (let c = 0; c < HUM; c++) if (!fin[c]) return false;
+    return true;
+  }
+  /** Axis k (0: x, 2: z) of car c against the table's edge (dt from DT: no doubles through calls). */
+  function wall(c: number, k: number) {
+    const dt = DT[0]!, h = k ? tr.HZ : tr.HX, v = cars[c]!, x = v.pos[k]!, over = (x < 0 ? -x : x) - (h - WALL);
+    if (over <= 0) return;
+    const out = x < 0 ? -1 : 1, vo = v.vel[k]! * out;
+    v.vel[k] = v.vel[k]! - out * over * 16 * dt - (vo > 0 ? vo * Math.min(0.9, over * 2.2 * dt * 4) : 0);
+  }
+  /** Drift points (a person's): the slide's angle × speed while the handbrake is held on the ground,
+   *  banked when the slide ends; lost on a crash, a spin or a hit. */
+  function driftScore(c: number) {
+    const dt = DT[0]!, o = c * K, a = hd.DR[c * 4 + D_AMT]!, ang = Math.abs(hd.DR[c * 4 + D_ANG]!), sp = hd.DR[c * 4 + D_SPD]!;
+    if (a > 0.3 && ang > 0.22 && sp > 4.5 && DS[c]![6]! === 0) {
+      C[o + DPTS] = C[o + DPTS]! + ang * sp * dt * (C[o + OFF] ? 5 : 10);
+      C[o + DTIME] = C[o + DTIME]! + dt;
+    } else if (C[o + DTIME]! > 0 && (a < 0.15 || ang < 0.12)) {
+      const pts = Math.round(C[o + DPTS]!);
+      if (pts >= 10) {
+        scs[c]!.add(pts);
+        N[c * 2] = Math.min(1, N[c * 2]! + Math.min(0.25, pts / 400));
+        C[o + DTOTAL] = C[o + DTOTAL]! + pts;
+        emit(E_DRIFT, c, pts);
       }
+      C[o + DPTS] = C[o + DTIME] = 0;
+    }
   }
   /** Standings: finished cars by order, then by distance raced (an insertion sort: no allocation). */
   function ranks() {
-    for (let k = 0; k < CARS; k++) rank[k] = k;
-    for (let k = 1; k < CARS; k++) {
+    for (let k = 0; k < NC; k++) rank[k] = k;
+    for (let k = 1; k < NC; k++) {
       const c = rank[k]!;
       let j = k - 1;
       while (j >= 0 && ahead(c, rank[j]!)) (rank[j + 1] = rank[j]!), j--;
       rank[j + 1] = c;
     }
-    for (let k = 0; k < CARS; k++) C[rank[k]! * K + PLACE] = k + 1;
+    for (let k = 0; k < NC; k++) C[rank[k]! * K + PLACE] = k + 1;
   }
   function ahead(a: number, b: number) {
     const fa = fin[a]!, fb = fin[b]!;
@@ -407,20 +531,20 @@ export function createRace(def: TrackDef, seed = 1) {
     return C[a * K + DIST]! > C[b * K + DIST]!;
   }
   function resting() {
-    for (let c = 0; c < CARS; c++) if (C[c * K + PH] === CRASH || (C[c * K + PARK]! < 1 && !cars[c]!.resting)) return false;
+    for (let c = 0; c < NC; c++) if (C[c * K + PH] === CRASH || (C[c * K + PARK]! < 1 && !cars[c]!.resting)) return false;
     return true;
   }
   /** End the race now (a surrender, a test): the standings as they are. */
   function finish() {
     if (R[0] === DONE) return;
-    for (let c = 0; c < CARS; c++) {
+    for (let c = 0; c < NC; c++) {
       const r = rank[c]!;
       if (!fin[r]) fin[r] = R[1]! + 0.001 * (c + 1);
       C[r * K + FT] = fin[r]!;
       if (C[r * K + PH] === DRIVE) C[r * K + PH] = FIN;
       order[c] = r;
     }
-    R[5] = CARS;
+    R[5] = NC;
     R[0] = DONE;
     R[3] = R[1]!;
     R[6] = 99;
@@ -429,12 +553,17 @@ export function createRace(def: TrackDef, seed = 1) {
 
   reset(seed);
   return {
-    def, tr, t, cars, C, R, pos, rot, rank, order, fin, sc, N, ev,
+    def, tr, t, cars, C, R, pos, rot, rank, order, fin, sc, scs, N, ev, IN, AUTO, DR: hd.DR,
+    /** Cars in the race, and how many are people (cars 0..humans−1). */
+    count: NC,
+    humans: HUM,
+    /** Car c's name (people: "YOU", or "P1", "P2" with two). */
+    name: (c: number) => (c < HUM ? (HUM > 1 ? "P" + (c + 1) : "YOU") : rival(c).name),
     get n() {
       return nev;
     },
     clear: () => void (nev = 0),
-    step, reset, finish, pilot,
+    step, input, reset, finish, pilot,
     /** Seconds of tumble before a respawn. */
     tumble: TUMBLE,
     laps: LAPS,

@@ -38,6 +38,13 @@
 .dh .dh-toast.dh-meh{background:#ffd166;color:#0b0a14}
 .dh .dh-toast.dh-bad{background:#ff4f5e;color:#0b0a14;rotate:2deg}
 .dh .dh-toast.dh-boost{background:#ff4fa8;color:#0b0a14}
+.dh .dh-toast.dh-drift{background:#d6ff3e;color:#0b0a14;rotate:1.5deg}
+.dh .dh-drift{background:#d6ff3e;color:#0b0a14;rotate:-1.5deg}
+.dh .dh-drift small{color:#0b0a14;opacity:.7}
+.dh .dh-drift span{min-width:3ch}
+.dh .dh-touch{display:none;align-items:center}
+@media (pointer:coarse){.dh .dh-touch{display:flex}}
+.dh .dh-padk{min-width:8.5em}
 .dh .dh-count{position:absolute;left:50%;top:38%;translate:-50% -50%;margin:0;padding:.1em .45em;font-size:clamp(48px,9cqw,110px);line-height:1;background:var(--surface);color:var(--ink);border:3px solid var(--rim);border-radius:18px;box-shadow:calc(6px * var(--bui-sx,1)) calc(6px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);rotate:-3deg}
 .dh .dh-count.dh-go{background:var(--k-go);color:var(--rim)}
 .dh .dh-demo{position:absolute;left:50%;bottom:16px;translate:-50% 0;margin:0;padding:.5em .9em;background:var(--k-go);color:var(--rim);border:2px solid var(--rim);border-radius:22px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);letter-spacing:.05em;white-space:nowrap}
@@ -70,5 +77,8 @@
 @container stage (max-width:760px){.dh .dh-hud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
 @media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(104px,22cqh,132px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(104px,22cqh,132px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(104px,22cqh,132px) + 14px)}}}
 @container stage (max-width:520px){.dh .dh-tracks{grid-template-columns:1fr}.dh .dh-card{padding:.8em .8em .9em}.dh .dh-card>b{font-size:1.5em}}
-@media (prefers-reduced-motion:reduce){.dh .dh-toast,.dh .dh-count,.dh .dh-pos{rotate:0deg}}
+@media (prefers-reduced-motion:reduce){.dh .dh-toast,.dh .dh-count,.dh .dh-pos,.dh .dh-drift{rotate:0deg}}
 .dh[data-demo] .dh-pad{display:none!important}.dh[data-demo] canvas,.dh[data-demo] .dh-play{height:100%!important}
+/* The track menu: on a wide stage it sits on the left and the preview of the picked track takes the right. */
+@container stage (min-width:900px){.dh .dh-menu{left:calc(12px + min(23%,300px));width:min(44%,560px)}.dh .dh-menu .dh-tracks{grid-template-columns:1fr}}
+.dh .dh-menu .dh-start{min-width:10em;font-size:1.1em}
