@@ -15,6 +15,7 @@
   slide holds under 0.62 rad and a little speed comes back on the way out. Cars collide as boxes.
 - Fizlet 0.24.0 also fixes the allocation 0.23.0's drive made with several races in one process
   (the race test: 1 to 3 young GCs over 200,000 steps).
+- The size budget is 88,000 bytes gzip (the build: BUILD; +SIZE over 0.3.0 for the brick's suspension, contact and the arms).
 - The rest of each wheel now sits behind the body on the far side too: the hub caps, the axle stubs
   and the suspension arms (0.3.0 fixed the tyres only; the arms sat on the body's layer and the caps
   could float over a side pod). One rule: everything on a wheel goes over the body on the near side
