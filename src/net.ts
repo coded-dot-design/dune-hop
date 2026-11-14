@@ -13,8 +13,8 @@ import type { Engine } from "@fzlt/core/kernel";
 
 /** Input bits: throttle 0..15 (bits 0–3), brake 0..15 (4–7), steer 1..255 (8–15, 128 straight),
  *  nitro (16), drift 0..15 (17–20), the autopilot (21), ready for a rematch (22), the seat left (23),
- *  one character of the player's name (24–29, the first frames only). */
-export const B_NITRO = 1 << 16, B_AUTO = 1 << 21, B_READY = 1 << 22, B_GONE = 1 << 23;
+ *  one character of the player's name (24–29, the first frames only), the ITEM key (30). */
+export const B_NITRO = 1 << 16, B_AUTO = 1 << 21, B_READY = 1 << 22, B_GONE = 1 << 23, B_ITEM = 1 << 30;
 /** At most this many seats in a room, and this many name characters. */
 export const SEATS = 4, NAME = 8;
 const q4 = (v: number) => Math.max(0, Math.min(15, Math.round(v * 15)));
@@ -24,21 +24,23 @@ export function encode(th: number, br: number, st: number, ni: number, dr: numbe
   const s = Math.max(1, Math.min(255, Math.round(st * 127) + 128));
   return (q4(th) | (q4(br) << 4) | (s << 8) | (ni ? B_NITRO : 0) | (q4(dr) << 17) | flags) >>> 0;
 }
-/** Unpack seat c's bits into IN (5 per car) and AUTO: every screen decodes the same bits the same way.
- *  A seat that left drives on the autopilot. */
+/** Unpack seat c's bits into IN (6 per car: the sims' IK) and AUTO: every screen decodes the same bits
+ *  the same way. A seat that left drives on the autopilot. */
 export function decode(bits: number, c: number, IN: Float64Array, AUTO: Uint8Array) {
-  const q = c * 5;
+  const q = c * 6;
   IN[q] = (bits & 15) / 15;
   IN[q + 1] = ((bits >>> 4) & 15) / 15;
   IN[q + 2] = (((bits >>> 8) & 255) - 128) / 127;
   IN[q + 3] = bits & B_NITRO ? 1 : 0;
   IN[q + 4] = ((bits >>> 17) & 15) / 15;
+  IN[q + 5] = bits & B_ITEM ? 1 : 0;
   AUTO[c] = bits & (B_AUTO | B_GONE) ? 1 : 0;
 }
 
-/** The host's pick as one byte: freestyle (bit 0), the track (1–2), rivals (3–4), laps (5–7, 0: the track's). */
-export const packMode = (free: boolean, track: number, rivals: number, laps: number) => (free ? 1 : 0) | ((track & 3) << 1) | ((rivals & 3) << 3) | ((laps & 7) << 5);
-export const unpackMode = (m: number) => ({ free: !!(m & 1), track: (m >> 1) & 3, rivals: (m >> 3) & 3, laps: (m >> 5) & 7 });
+/** The host's pick as one byte: freestyle (bit 0), the track (1–2), rivals (3: none or three), BATTLE
+ *  (4), laps (5–7, 0: the track's). */
+export const packMode = (free: boolean, track: number, rivals: number, laps: number, battle = false) => (free ? 1 : 0) | ((track & 3) << 1) | (rivals ? 8 : 0) | (battle ? 16 : 0) | ((laps & 7) << 5);
+export const unpackMode = (m: number) => ({ free: !!(m & 1), track: (m >> 1) & 3, rivals: m & 8 ? 3 : 0, laps: (m >> 5) & 7, battle: !!(m & 16) });
 
 // Names: A–Z, 0–9 and a space, six bits a character (0 ends the name), one character a frame.
 const ABC = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";

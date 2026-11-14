@@ -51,8 +51,9 @@ try {
     return room;
   };
   const A = await open("/", { width: 1440, height: 900 }, false, "A");
-  // A hosts: Split Canyon (its laps: one), HOST, four players.
+  // A hosts: Split Canyon (its laps: one), BATTLE, HOST, four players.
   await A.evaluate((sr) => eval(sr).querySelectorAll(".dh-tracks button")[2].click(), sr);
+  await click(A, "[data-seg=set] [data-v=battle]");
   const ra = await toRoom(A, "Ana");
   await ra.locator(".dh-host").click();
   await until(A, (sr) => !eval(sr).querySelector(".dh-roomc [data-for=host]").hidden, sr, "A picks the size");
@@ -95,12 +96,13 @@ try {
   for (const p of all) await until(p, () => game.getSnapshot().online && game.getSnapshot().phase === "count", null, "all four in the match");
   const s0 = await Promise.all(all.map(snap));
   assert.deepEqual(s0.map((s) => s.seat), [0, 1, 2, 3], "seats in arrival order: A hosts");
-  assert.deepEqual(s0.map((s) => [s.track, s.laps, s.players]), Array(4).fill(["split-canyon", 1, 4]), "the host's track and laps, four people, on every screen");
+  assert.deepEqual(s0.map((s) => [s.track, s.laps, s.players, !!s.battle]), Array(4).fill(["split-canyon", 1, 4, true]), "the host's track, laps and BATTLE, four people, on every screen");
   await Promise.all(all.map((p) => until(p, () => game.getSnapshot().net.names[2] === "CY", null, "the names arrive")));
   const names = await Promise.all(all.map(async (p) => (await snap(p)).net.names));
   for (const n of names) assert.deepEqual(n, names[0], "every screen has the same names");
   assert.deepEqual(names[0], ["ANA", "BO", "CY", ""], `typed (A, C), kept on the device (B), none (D: P4): ${names[0]}`);
-  assert.equal(await text(C, ".dh-who"), "CY", "each screen's chip says whose buggy it is");
+  // (The chips repaint once the last name character is in, a few frames after the names read whole.)
+  await until(C, (sr) => eval(sr).querySelector(".dh-who").textContent === "CY", sr, "each screen's chip says whose buggy it is");
   console.log(`✓ room ${room} full: four in the match on the host's pick, names ${names[0].map((n, i) => n || "P" + (i + 1)).join(" / ")} on every screen (${ms()})`);
 
   // All four on the autopilot; D closes its tab once the race is on.
@@ -116,6 +118,8 @@ try {
   const s1 = await Promise.all(stay.map(snap));
   for (const s of s1) assert.deepEqual(s.cars.map((c) => c.place), s1[0].cars.map((c) => c.place), "every screen agrees on the places");
   assert.deepEqual(s1.map((s) => s.net.desync), [-1, -1, -1], "no desync");
+  for (const s of s1) assert.deepEqual(s.battle.held, s1[0].battle.held, "every screen agrees on who holds what");
+  assert.ok(s1[0].battle.seen.fire > 0 && s1.every((s) => s.battle.seen.hit === s1[0].battle.seen.hit), `BATTLE in lockstep: ${s1.map((s) => JSON.stringify(s.battle.seen)).join(" / ")}`);
   assert.ok(s1.every((s) => s.net.frame > 600), `lockstep frames: ${s1.map((s) => s.net.frame)}`);
   const heads = await Promise.all(stay.map((p) => text(p, ".dh-r-head")));
   const winners = heads.map((h, i) => (h.startsWith("YOU WIN") ? names[0][i] || "P" + (i + 1) : h.replace(/ WINS.*$/, "")));
@@ -144,6 +148,7 @@ try {
   await A.context().close();
   const E = await open("/", { width: 1440, height: 900 }, false, "E");
   await click(E, "[data-seg=mode] [data-v=free]");
+  await click(E, "[data-seg=set] [data-v=battle]");
   const re = await toRoom(E, "Eve");
   await re.locator(".dh-host").click();
   await re.locator("[data-size='3']").click();
@@ -156,7 +161,11 @@ try {
   await until(E, (sr) => !eval(sr).querySelector(".dh-go").hidden, sr, "START NOW shows with two in");
   await click(E, ".dh-go");
   for (const p of [E, F]) await until(p, () => game.getSnapshot().online && game.getSnapshot().kind === "free", null, "a Freestyle jam for two");
-  assert.deepEqual((await Promise.all([E, F].map(snap))).map((s) => [s.seat, s.players]), [[0, 2], [1, 2]], "START NOW: the two seats taken");
+  assert.deepEqual((await Promise.all([E, F].map(snap))).map((s) => [s.seat, s.players, !!s.king, !!s.battle]), [[0, 2, true, true], [1, 2, true, true]], "START NOW: the two seats taken, King of the Table with BATTLE on both");
+  for (const p of [E, F]) await p.evaluate(() => (game.auto = true));
+  await Promise.all([E, F].map((p) => until(p, () => game.getSnapshot().net.frame > 900, null, "the jam runs", 60000)));
+  const kt = await Promise.all([E, F].map(snap));
+  assert.deepEqual(kt.map((s) => s.net.desync), [-1, -1], "King of the Table in lockstep: no desync");
   await F.context().close();
   await until(E, (sr) => /left the match/.test(eval(sr).querySelector(".dh-gone-say").textContent), sr, "E hears F left", 20000);
   console.log("✓ a room of three started early (START NOW): a Freestyle jam for two; one leaves, the other is told");

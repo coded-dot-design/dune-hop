@@ -8,27 +8,31 @@
 // three identical to the flag.
 import test from "node:test";
 import assert from "node:assert/strict";
-const { createRace, DONE } = await import("../src/race.ts");
+const { createRace, DONE, E_HIT, E_FIRE } = await import("../src/race.ts");
+/** A state view with something in it. */
+const b0 = (v) => v.some((x) => x !== 0);
 const { createFreestyle } = await import("../src/freestyle.ts");
 const { TRACKS } = await import("../src/tracks.ts");
-const { encode, decode, hashOf, packMode, unpackMode, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_GONE } = await import("../src/net.ts");
+const { encode, decode, hashOf, packMode, unpackMode, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_GONE, B_ITEM } = await import("../src/net.ts");
 const { createEngine } = await import("@fzlt/core/kernel");
 const { memory } = await import("@fzlt/core/presence");
 // (Not in the package's exports map: imported by its file.)
 const { syncCheck } = await import("../node_modules/@fzlt/core/dist/presence-check.js");
 
 /** Seat p's scripted input on frame f (its own pattern: only it would know it). */
-const script = (f, p) => encode(f % 400 < 380 ? 1 : 0, f % 400 >= 380 ? 1 : 0, Math.sin(f / (37 + p * 11) + p), f % 300 < 25 ? 1 : 0, f % 220 < 45 ? 1 : 0, f > 600 ? B_AUTO : 0);
+const script = (f, p) => encode(f % 400 < 380 ? 1 : 0, f % 400 >= 380 ? 1 : 0, Math.sin(f / (37 + p * 11) + p), f % 300 < 25 ? 1 : 0, f % 220 < 45 ? 1 : 0, (f > 600 ? B_AUTO : 0) | (f % 90 < 2 ? B_ITEM : 0));
 
 test("the wire format: inputs survive the trip, the host's pick fits in a byte", () => {
-  const IN = new Float64Array(10), AUTO = new Uint8Array(2);
+  const IN = new Float64Array(12), AUTO = new Uint8Array(2);
   decode(encode(1, 0, -1, 1, 1, B_AUTO), 1, IN, AUTO);
-  assert.deepEqual(Array.from(IN.slice(5)), [1, 0, -1, 1, 1]);
+  assert.deepEqual(Array.from(IN.slice(6)), [1, 0, -1, 1, 1, 0]);
   assert.equal(AUTO[1], 1);
   decode(encode(0.5, 0.25, 0.3, 0, 0), 0, IN, AUTO);
   assert.ok(Math.abs(IN[0] - 0.5) < 0.04 && Math.abs(IN[1] - 0.25) < 0.04 && Math.abs(IN[2] - 0.3) < 0.01 && AUTO[0] === 0);
   assert.ok(encode(0, 0, 0, 0, 0, B_READY) & B_READY);
-  for (const m of [[false, 3, 3, 1], [true, 0, 0, 0], [false, 2, 0, 7]]) assert.deepEqual(Object.values(unpackMode(packMode(...m))), m);
+  for (const m of [[false, 3, 3, 1, true], [true, 0, 0, 0, false], [false, 2, 0, 7, true], [true, 1, 3, 0, false]]) assert.deepEqual(Object.values(unpackMode(packMode(...m))), m);
+  decode(encode(0, 0, 0, 0, 0, B_ITEM), 0, IN, AUTO);
+  assert.equal(IN[5], 1, "the ITEM key rides bit 30");
   // A seat that left drives on the autopilot; names ride one character a frame above the inputs.
   decode(encode(1, 0, 0, 0, 0, B_GONE), 1, IN, AUTO);
   assert.equal(AUTO[1], 1);
@@ -44,16 +48,20 @@ for (const [name, make, H] of [
   ["a Freestyle jam", () => createFreestyle(77, { humans: 2, jam: 60 }), 2],
   ["a race (four people, two rivals)", () => createRace(TRACKS[1], 78, { humans: 4, rivals: 3, laps: 1 }), 4],
   ["a four-way Freestyle jam", () => createFreestyle(78, { humans: 4, jam: 60 }), 4],
+  ["a BATTLE race (two people, three rivals: items, hits)", () => createRace(TRACKS[2], 79, { humans: 2, rivals: 3, laps: 1, battle: true }), 2],
+  ["a BATTLE race (four people, two rivals: items, hits)", () => createRace(TRACKS[1], 80, { humans: 4, rivals: 2, laps: 1, battle: true }), 4],
+  ["a King of the Table BATTLE jam (four)", () => createFreestyle(81, { humans: 4, jam: 60, battle: true }), 4],
 ])
   test(`${H} screens, one input stream: ${name} stays identical; one wrong input shows in the hash`, () => {
     const sims = Array.from({ length: H }, make), c = make(), a = sims[0];
     assert.equal(a.humans, H);
     if (a.kind === "race") assert.equal(a.count, Math.min(6, H + 3), "the rivals fill the grid up to six");
-    let first = -1;
+    let first = -1, fx = 0;
     for (let f = 0; f < 60 * 150 && a.R[0] !== DONE; f++) {
       for (const [s, bad] of [...sims.map((s) => [s, 0]), [c, 1]]) {
-        for (let p = 0; p < H; p++) decode(bad && f === 500 && p === 1 ? script(f, p) ^ 0xff00 : script(f, p), p, s.IN, s.AUTO);
+        for (let p = 0; p < H; p++) decode(bad && f === 560 && p === 1 ? script(f, p) ^ 0xff00 : script(f, p), p, s.IN, s.AUTO);
         s.step(1 / 60);
+        if (s === a) for (let k = 0; k < s.n; k++) if (s.ev[k * 3] === E_HIT || s.ev[k * 3] === E_FIRE) fx++;
         s.clear();
       }
       if (f % 30 === 29) {
@@ -61,8 +69,9 @@ for (const [name, make, H] of [
         if (first < 0 && hashOf(a.bytes) !== hashOf(c.bytes)) first = f;
       }
     }
-    assert.ok(first >= 500 && first < 560, `the wrong input was caught by the hash check at frame ${first}`);
+    assert.ok(first >= 560 && first < 620, `the wrong input was caught by the hash check at frame ${first}`);
     if (a.kind === "race") assert.equal(a.R[0], DONE, "the race finished");
+    if (a.battle) assert.ok(fx > 4 && a.items.bytes.every((v) => b0(v)), `items fired and hit in step on every screen (${fx})`);
     // Byte for byte, every view of the state.
     for (const b of sims) b.bytes.forEach((v, i) => assert.ok(Buffer.from(v).equals(Buffer.from(a.bytes[i])), `byte view ${i} identical`));
   });
