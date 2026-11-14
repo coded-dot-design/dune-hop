@@ -7,8 +7,8 @@ import { readdirSync, readFileSync } from "node:fs";
 // 76,000 → 86,000 (0.3.0: BATTLE items and their AI, the tumble that rights itself, King of the Table,
 // and @fzlt/core/fx's blasts for the hits, ~2.8 KB of it): measured in the size ledger note of the PR.
 // 86,000 → 88,000 (long-travel suspension on @fzlt/core 0.24.0: the drive brick's suspension options,
-// its class model and its `touch` now in the build, the swinging arms): measured +2,006 B gzip over
-// 0.3.0's 84,689 (dune-hop.js), leaving ~1.3 KB of room.
+// its class model and its `touch` now in the build, the swinging arms): measured +1,973 B gzip over
+// main's 84,804 (dune-hop.js, 0.3.0 + wheel parts), leaving ~1.3 KB of room.
 const BUDGET = 88_000;
 let failed = false;
 for (const file of readdirSync("dist").filter((f) => /\.m?js$/.test(f)).sort().map((f) => `dist/${f}`)) {

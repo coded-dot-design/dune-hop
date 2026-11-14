@@ -10,12 +10,15 @@
   landing sinks deep, rebounds once and settles. Measured over the autopilot's races (four tracks, two
   seeds): 214 landings, 16 on the bump stop (0.3.0's springs: 193 of 205), the median landing uses
   0.91 of the travel. A tumble that rights itself drops the buggy onto its springs.
-- On `@fzlt/core` 0.24.0: drift, car contact and suspension are the `drive` brick's (`src/handling.ts`
+- On `@fzlt/core` 0.25.0: drift, car contact and suspension are the `drive` brick's (`src/handling.ts`
   is now a thin view of them for the race). The handbrake is the brick's: the tail swings out, the
   slide holds under 0.62 rad and a little speed comes back on the way out. Cars collide as boxes.
-- Fizlet 0.24.0 also fixes the allocation 0.23.0's drive made with several races in one process
+- Online rollback snapshots each car through the brick's own `state` (Fizlet 0.25.0: one buffer,
+  `save`/`load`); `src/state.ts`, which swapped the global typed-array constructors to catch a car's
+  arrays, is gone.
+- Fizlet 0.24 also fixes the allocation 0.23.0's drive made with several races in one process
   (the race test: 1 to 3 young GCs over 200,000 steps).
-- The size budget is 88,000 bytes gzip (the build: BUILD; +SIZE over 0.3.0 for the brick's suspension, contact and the arms).
+- The size budget is 88,000 bytes gzip (the build: 86,777; +1,973 over main for the brick's suspension, contact and the arms).
 - The rest of each wheel now sits behind the body on the far side too: the hub caps, the axle stubs
   and the suspension arms (0.3.0 fixed the tyres only; the arms sat on the body's layer and the caps
   could float over a side pod). One rule: everything on a wheel goes over the body on the near side
