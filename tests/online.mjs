@@ -158,6 +158,9 @@ try {
   // All four on the autopilot; D closes its tab once the race is on.
   for (const p of all) await p.evaluate(() => (game.auto = true));
   await until(A, () => game.getSnapshot().phase === "race" && game.getSnapshot().elapsed > 6, null, "the race is on", 60000);
+  // A phone online gets the same pad as alone: no GAS key (the stick gives it), DRIFT the big corner key.
+  const bpad = await B.evaluate((sr) => { const ks = [...eval(sr).querySelectorAll(".bui-pad-keys button")].filter((b) => b.offsetParent), r = ks.map((b) => b.getBoundingClientRect()); return [ks.map((b) => b.title).join(" / "), ks[r.findIndex((a) => r.every((b) => a.right >= b.right && a.bottom >= b.bottom))]?.title]; }, sr);
+  assert.deepEqual(bpad, ["Brake / Drift, the handbrake / Nitro boost / Use item", "Drift, the handbrake"], `B's phone pad online: ${bpad}`);
   const leftAt = (await snap(A)).net.frame;
   await D.context().close();
   const stay = [A, B, C];

@@ -85,9 +85,10 @@ allows (its `MAX_PLAYERS`, at most four here).
 
 **Controls.** ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro; in the air gas
 lifts the nose and brake dips it. P pause, V camera (chase or the whole table), M sound, R restart,
-T menu, F item (BATTLE). A mouse: hold the course for gas, drag to steer. Phones: GAS, BRAKE, DRIFT
-and BOOST (and ★ ITEM in BATTLE) under the right thumb; the left thumb steers on a ◀ ▶ pad or a stick (STEERING on the pause card; the
-choice is kept on the device). The look follows the page's `<html data-theme>`.
+T menu, F item (BATTLE). A mouse: hold the course for gas, drag to steer. Phones: the left thumb's stick
+steers and gives the gas (push up; pull down to brake); under the right thumb DRIFT is the big key in the corner, so gas and a
+drift work together, with BRAKE, BOOST and (in BATTLE) ★ ITEM round it. STEERING on the pause card swaps the stick for ◀ ▶ keys,
+which give no gas, so that layout brings a GAS key back to the corner with DRIFT next to it (the choice is kept on the device). The look follows the page's `<html data-theme>`.
 
 The race is deterministic and seeded (items, boxes and hits too): the same seed and inputs give the same race, bit for bit
 (the course uses only + − × ÷ and square roots): that is what makes online play work.

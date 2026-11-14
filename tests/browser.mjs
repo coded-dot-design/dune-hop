@@ -1,7 +1,7 @@
 // Dune Hop in Chromium (the built dist/dune-hop.mjs), at 1440 (keyboard and mouse) and 390 (touch):
 // it mounts in the page's board with the track menu (every key 44 px or more) and the race drawn
 // on the canvas; a track key starts the countdown, then GO; the keyboard (↑) and the mouse (hold on
-// the course) drive on a desktop, the pad's GAS key on a phone; P pauses (the clock holds) and
+// the course) drive on a desktop, the stick on a phone; P pauses (the clock holds) and
 // resumes; the autopilot runs a whole race to the result card, whose time becomes the track's best
 // on the menu; reduced motion still plays (no shake, the camera snaps); the attract lap runs by
 // itself and a tap takes the wheel; dropped onto a page (no host) Escape gives the page back byte
@@ -9,7 +9,9 @@
 // left alone. Two on one screen: a view each, side by side (desktop; on a touch-only phone it is held
 // back behind ?split=touch: stacked, a stick each); each person's keys drive only their own car. On
 // a phone the stick alone steers, gasses and brakes (touch events, a stretch of the course gate after
-// gate); the pause card swaps STICK and ARROWS, and a 0.2.0 saved choice moves to the stick. Waits on state, never on time. (Online: tests/online.mjs.)
+// gate), with no GAS key and DRIFT the big corner key: stick-up gas and a held DRIFT drift through the
+// bends together; the stick is ≥ 16 px clear of the edge and the cluster at 360–430 wide; the pause
+// card swaps STICK and ARROWS (GAS back in the corner, still drivable), and a 0.2.0 saved choice moves to the stick. Waits on state, never on time. (Online: tests/online.mjs.)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -59,23 +61,31 @@ try {
       await until(p, (a) => game.getSnapshot().speed > a + 2, sp0, `${name}: holding the mouse drives`);
       await p.mouse.up();
     } else {
-      const gas = await p.evaluate(() => { const b = document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".bui-pad button[aria-label^='Gas']").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
       const cdp = await ctx.newCDPSession(p);
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: gas.x, y: gas.y, id: 1 }] });
-      await until(p, (a) => { const s = game.getSnapshot(); return Math.hypot(s.player.x - a.x, s.player.y - a.y) > 30; }, s0.player, `${name}: the pad's GAS drives`);
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      // The stick (the default on a phone) under the left thumb; GAS, BRAKE, DRIFT and BOOST as icon
-      // keys in a cluster under the right one (GAS the big one, in the corner).
-      const keysOf = () => p.evaluate(() => {
+      // The stick (the default on a phone) under the left thumb gives the gas, so no GAS key; DRIFT,
+      // BRAKE and BOOST as icon keys in a cluster under the right one (DRIFT the big one, in the corner).
+      const keysOf = () => p.evaluate(keysOfPad);
+      const keysOfPad = () => {
         const root = document.querySelector("[data-fizlet-host]").shadowRoot, pad = root.querySelector(".bui-pad"), r = (e) => e.getBoundingClientRect(), st = pad.querySelector(".bui-stick");
         const keys = [...pad.querySelectorAll(".bui-pad-keys button")].filter((b) => b.offsetParent), kr = keys.map(r), sr = r(pad.querySelector(".bui-pad-move"));
         const hit = (a, b) => Math.hypot(a.x + a.width / 2 - b.x - b.width / 2, a.y + a.height / 2 - b.y - b.height / 2) < (a.width + b.width) / 2;
         const clear = kr.every((a, i) => kr.every((b, j) => i === j || !hit(a, b)) && a.left >= sr.right && a.right <= innerWidth);
         const moves = [...pad.querySelectorAll(".bui-pad-move button")].map((b) => b.getAttribute("aria-label")), big = [...pad.querySelectorAll("button, .bui-stick")].filter((b) => b.offsetParent).every((b) => Math.min(r(b).width, r(b).height) >= 44);
-        return { moves, stick: !!st, acts: keys.map((b) => b.title), icons: keys.every((b) => b.querySelector("svg") && !b.querySelector("small") && b.getAttribute("aria-label")), gasCorner: kr[0].right === Math.max(...kr.map((k) => k.right)) && kr[0].bottom === Math.max(...kr.map((k) => k.bottom)) && kr[0].width > kr[1].width, clear, big, h: Math.round(r(pad).height), top: Math.round(r(pad).top), padk: root.querySelector(".dh-padk").textContent };
-      });
+        const ci = kr.findIndex((a) => kr.every((b) => a === b || (a.right >= b.right && a.bottom >= b.bottom && a.width > b.width))), sk = st && r(st);
+        const room = sk ? { edge: Math.round(Math.min(sk.left, innerHeight - sk.bottom)), gap: Math.round(Math.min(...kr.map((k) => k.left)) - sk.right), size: Math.round(sk.width) } : null;
+        return { moves, stick: !!st, acts: keys.map((b) => b.title), icons: keys.every((b) => b.querySelector("svg") && !b.querySelector("small") && b.getAttribute("aria-label")), corner: ci < 0 ? "" : keys[ci].title, clear, big, room, h: Math.round(r(pad).height), top: Math.round(r(pad).top), padk: root.querySelector(".dh-padk").textContent };
+      };
       const stickPad = await keysOf();
-      assert.deepEqual([stickPad.moves, stickPad.stick, stickPad.acts, stickPad.icons, stickPad.gasCorner, stickPad.clear, stickPad.big, stickPad.padk], [[], true, ["Gas", "Brake", "Drift, the handbrake", "Nitro boost"], true, true, true, true, "STICK"], `${name}: the stick and the icon cluster (GAS in the corner), no overlaps, keys ≥ 44 px`);
+      assert.deepEqual([stickPad.moves, stickPad.stick, stickPad.acts, stickPad.icons, stickPad.corner, stickPad.clear, stickPad.big, stickPad.padk], [[], true, ["Brake", "Drift, the handbrake", "Nitro boost"], true, "Drift, the handbrake", true, true, "STICK"], `${name}: the stick and the icon cluster (no GAS key, DRIFT in the corner), no overlaps, keys ≥ 44 px`);
+      // The stick is thumb-sized and ≥ 16 px clear of the screen's edge and the cluster at 360–430 wide.
+      for (const w of [360, 390, 430]) {
+        await p.setViewportSize({ width: w, height: 844 });
+        await until(p, (w) => innerWidth === w, w, `${name}: ${w} wide`);
+        const k = await keysOf();
+        assert.ok(k.room.size >= 115 && k.room.edge >= 16 && k.room.gap >= 16 && k.clear && k.big, `${name} at ${w}: stick ${JSON.stringify(k.room)}`);
+      }
+      await p.setViewportSize(viewport);
+      await until(p, (w) => innerWidth === w, viewport.width, `${name}: back to ${viewport.width}`);
       // Only the stick, with real touches: partway right steers about proportionally (not full) and
       // gives no gas; push up and it drives; then it drives a stretch of the course, gate after gate,
       // steering at the racing line ahead (what a player looks at) and nothing else.
@@ -99,15 +109,44 @@ try {
       assert.ok(after.gate >= g0 + 3 && !after.crashed, `${name}: the stick alone drove through three gates (${g0} → ${after.gate}, ${laps} moves)`);
       await t("touchEnd", [[st.x, st.y, 3]]);
       await until(p, () => { const c = game.getSnapshot().cars[0]; return c.steer === 0 && c.gas === 0 && c.brake === 0; }, null, `${name}: let go: steer, gas and brake back to 0`);
+      // Two thumbs at once: stick-up gas on the left, DRIFT held on the right, through the bends: the
+      // tail steps out and drift points bank, gate after gate.
+      const dk = await p.evaluate(() => { const b = document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".bui-pad button[aria-label^='Drift']").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+      const d0 = await snap(p), dg0 = d0.gate, dt0 = d0.cars[0].driftTotal;
+      await t("touchStart", [[st.x, st.y, 3]]);
+      await t("touchMove", [[st.x, st.y - st.r * 0.95, 3]]);
+      let both = false;
+      for (let i = 0; i < 2400 && ((await snap(p)).cars[0].driftTotal <= dt0 || (await snap(p)).gate < dg0 + 1); i++) {
+        const s = await snap(p), fx = Math.cos(s.player.angle), fz = -Math.sin(s.player.angle), ux = s.aim.x - s.player.x, uz = s.aim.y - s.player.y, ul = Math.hypot(ux, uz) || 1;
+        const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul, steer = dot < 0 ? Math.sign(cross) : Math.max(-1, Math.min(1, cross * 3));
+        // Drift into the bends (the aim off to one side), let it go on the straights.
+        const bend = Math.abs(cross) > 0.25 && s.speed > 4;
+        await t("touchMove", bend ? [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3], [dk.x, dk.y, 4]] : [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3]]);
+        if (bend && s.cars[0].drift === 1 && s.cars[0].gas > 0.5) both = true;
+      }
+      const da = await snap(p);
+      assert.ok(both && da.cars[0].driftTotal > dt0 && da.gate >= dg0 + 1 && !da.crashed, `${name}: stick-up gas and DRIFT held together drifted through the bends (both held: ${both}, drift ${dt0} → ${da.cars[0].driftTotal}, gates ${dg0} → ${da.gate}, crashed: ${da.crashed})`);
+      await t("touchEnd", []);
+      await until(p, () => { const c = game.getSnapshot().cars[0]; return c.drift === 0 && c.gas === 0; }, null, `${name}: both thumbs off: no drift, no gas`);
       // The pause card's STEERING key: STICK → ARROWS → STICK (no layout shift), remembered.
       await sh(p, () => game.pause());
       const cycle = [];
       for (let i = 0; i < 2; i++) {
         await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-padk").click());
         const k = await keysOf();
-        cycle.push([k.padk, k.moves.join(" "), k.stick, k.acts.length, k.h === stickPad.h && k.top === stickPad.top, k.clear, await p.evaluate(() => localStorage.getItem("dune-hop:steer"))]);
+        cycle.push([k.padk, k.moves.join(" "), k.stick, k.acts.join(" / "), k.corner, k.h === stickPad.h && k.top === stickPad.top, k.clear, k.big, await p.evaluate(() => localStorage.getItem("dune-hop:steer"))]);
+        if (i) break;
+        // ARROWS: no gas on the arrows, so a GAS key in the corner; still drivable (GAS and ▶ held).
+        await sh(p, () => game.resume());
+        const ar = await p.evaluate(() => { const q = (s) => { const b = document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(s).getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }; return { gas: q(".bui-pad button[aria-label^='Gas']"), right: q(".bui-pad-move button[aria-label='Right']") }; });
+        const a0 = await snap(p);
+        await t("touchStart", [[...ar.gas, 5], [...ar.right, 6]]);
+        await until(p, (a) => { const s = game.getSnapshot(), c = s.cars[0]; return c.gas === 1 && c.steer > 0.5 && Math.hypot(s.player.x - a.x, s.player.y - a.y) > 30; }, a0.player, `${name}: ARROWS: GAS and ▶ drive and steer`);
+        await t("touchEnd", []);
+        await until(p, () => { const c = game.getSnapshot().cars[0]; return c.gas === 0 && c.steer === 0; }, null, `${name}: ARROWS: let go`);
+        await sh(p, () => game.pause());
       }
-      assert.deepEqual(cycle, [["◀ ▶ ARROWS", "Left Right", false, 4, true, true, "arrows"], ["STICK", "", true, 4, true, true, "stick"]], `${name}: the STEERING cycle`);
+      assert.deepEqual(cycle, [["◀ ▶ ARROWS", "Left Right", false, "Gas / Brake / Drift, the handbrake / Nitro boost", "Gas", true, true, true, "arrows"], ["STICK", "", true, "Brake / Drift, the handbrake / Nitro boost", "Drift, the handbrake", true, true, true, "stick"]], `${name}: the STEERING cycle`);
       await sh(p, () => game.resume());
     }
     const s1 = await snap(p);
@@ -202,10 +241,10 @@ try {
     await p.evaluate(() => document.getElementById("board").scrollIntoView({ block: "center" }));
     await sh(p, () => { const root = document.querySelector("[data-fizlet-host]").shadowRoot; root.querySelector("[data-seg=players] [data-v='2']").click(); root.querySelector(".dh-start").click(); });
     await until(p, () => game.getSnapshot().phase === "race", null, "split phone: GO");
-    const views = await sh(p, () => [...document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-view")].filter((v) => !v.hidden).map((v) => { const r = v.getBoundingClientRect(), pad = v.querySelector(".bui-pad"), q = pad.getBoundingClientRect(), g = pad.querySelector("button[aria-label^='Gas']").getBoundingClientRect(), t = pad.querySelector(".bui-stick").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, padIn: q.top >= r.top - 1 && q.bottom <= r.bottom + 1, gas: { x: g.x + g.width / 2, y: g.y + g.height / 2 }, st: { x: t.x + t.width / 2, y: t.y + t.height / 2, r: t.width * 0.36 }, big: g.width >= 44 && g.height >= 44 && t.height >= 44 }; }));
+    const views = await sh(p, () => [...document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-view")].filter((v) => !v.hidden).map((v) => { const r = v.getBoundingClientRect(), pad = v.querySelector(".bui-pad"), q = pad.getBoundingClientRect(), g = pad.querySelector("button[aria-label^='Drift']").getBoundingClientRect(), t = pad.querySelector(".bui-stick").getBoundingClientRect(), ks = [...pad.querySelectorAll(".bui-pad-keys button")].filter((b) => b.offsetParent); return { top: r.top, bottom: r.bottom, padIn: q.top >= r.top - 1 && q.bottom <= r.bottom + 1, acts: ks.map((b) => b.title).join(" / "), corner: g.right >= Math.max(...ks.map((b) => b.getBoundingClientRect().right)) && g.bottom >= Math.max(...ks.map((b) => b.getBoundingClientRect().bottom)), st: { x: t.x + t.width / 2, y: t.y + t.height / 2, r: t.width * 0.36 }, big: g.width >= 44 && g.height >= 44 && t.height >= 44 }; }));
     assert.equal(views.length, 2, "split phone: two views");
     assert.ok(views[1].top >= views[0].bottom - 1, "split phone: stacked");
-    assert.ok(views.every((v) => v.padIn && v.big), "split phone: a stick and a cluster in each half, keys ≥ 44 px");
+    assert.ok(views.every((v) => v.padIn && v.big && v.corner && v.acts === "Brake / Drift, the handbrake / Nitro boost"), `split phone: a stick and the same cluster in each half (no GAS, DRIFT in the corner), keys ≥ 44 px: ${views.map((v) => v.acts)}`);
     const a = (await snap(p)).cars, cdp = await ctx.newCDPSession(p), s1 = views[1].st, s0 = views[0].st;
     const touch = (type, pts) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id })) });
     await touch("touchStart", [[s1.x, s1.y, 1]]);

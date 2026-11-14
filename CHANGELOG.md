@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Phones: gas and drift at once. The stick gives the gas (push up), so the separate GAS key is gone;
+  DRIFT is now the big key in the corner under the right thumb, ★ ITEM takes DRIFT's old place, and
+  BRAKE and BOOST stay. The stick is a little bigger (120 px at 390 wide, 16 px clear of the edge).
+  STEERING → ARROWS (no gas on the arrows) keeps a GAS key in the corner with DRIFT next to it.
+- The buggies' far-side wheels no longer draw over the body. Every wheel sat on the layer above the
+  body, so a far tyre could cover the cage or the seat (worst when turning or drifting). Now each
+  draw puts a wheel over the body when it is on the camera's side of the car and under it when it
+  is on the far side, for every buggy (rivals too) in every view; a test checks the paint order at
+  16 headings × 3 pitches × 3 rolls under three cameras.
+
 ## 0.2.2
 
 - Online for up to four phones, a view each. ONLINE opens a room card made for a phone: your name,
