@@ -74,7 +74,7 @@
 .dh .dh-pad{--u:.78px;display:none}
 .dh .dh-pad .bui-pad-keys{max-width:none;flex-wrap:nowrap}
 @media (pointer:coarse){.dh .dh-pad{display:flex}.dh .dh-hint{display:none}}
-@container stage (max-width:760px){.dh .dh-hud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
+@container stage (max-width:760px){.dh .dh-hud,.dh .dh-vhud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
 @media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(104px,22cqh,132px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(104px,22cqh,132px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(104px,22cqh,132px) + 14px)}}}
 @container stage (max-width:520px){.dh .dh-tracks{grid-template-columns:1fr}.dh .dh-card{padding:.8em .8em .9em}.dh .dh-card>b{font-size:1.5em}}
 @media (prefers-reduced-motion:reduce){.dh .dh-toast,.dh .dh-count,.dh .dh-pos,.dh .dh-drift{rotate:0deg}}
@@ -82,3 +82,50 @@
 /* The track menu: on a wide stage it sits on the left and the preview of the picked track takes the right. */
 @container stage (min-width:900px){.dh .dh-menu{left:calc(12px + min(23%,300px));width:min(44%,560px)}.dh .dh-menu .dh-tracks{grid-template-columns:1fr}}
 .dh .dh-menu .dh-start{min-width:10em;font-size:1.1em}
+/* The views: one fills the stage; two people split it (side by side on a wide stage, stacked on a tall
+   one), each half its own canvas, HUD and touch pad. The play key sits under them (they let the
+   pointer through) and takes the pointer and the keyboard's focus. */
+.dh{--dh-t0:#22e6ff;--dh-t1:#ff4fa8;--dh-t2:#ffd166;--dh-t3:#d6ff3e}
+.dh[data-day]{--dh-t0:#fff1dc;--dh-t1:#ff3d7f;--dh-t2:#ffd25a;--dh-t3:#14d8e8}
+.dh .dh-views{position:absolute;inset:0;display:flex;pointer-events:none}
+.dh .dh-view{position:relative;flex:1 1 0;min-width:0;min-height:0;overflow:hidden;container:view/size}
+.dh .dh-vhud{position:absolute;inset:0;pointer-events:none}
+.dh[data-split] .dh-views{gap:4px;background:var(--rim)}
+.dh[data-split] .dh-view{--dh-right:0px}
+.dh[data-split] .dh-keys{right:auto;left:50%;translate:-50% 0}
+.dh[data-split] .dh-view:first-child .dh-head{right:140px}
+.dh[data-split] .dh-view:last-child .dh-head{left:140px;right:10px}
+.dh .dh-who{display:none;background:var(--k-sys);color:var(--rim);letter-spacing:.06em;rotate:-2deg}
+.dh .dh-view:last-child .dh-who{background:var(--k-go)}
+.dh[data-split] .dh-who{display:inline-flex}
+.dh[data-split] .dh-toast{font-size:1em;top:34%}
+@container stage (aspect-ratio<1){.dh[data-split] .dh-views{flex-direction:column}.dh[data-split] .dh-keys{left:auto;right:8px;translate:none}.dh[data-split] .dh-view:first-child .dh-head{right:112px}.dh[data-split] .dh-view:last-child .dh-head{left:8px;right:8px}}
+@container view (max-width:620px){.dh[data-split] .dh-score i,.dh[data-split] .dh-nitro small,.dh[data-split] .dh-time small{display:none}.dh[data-split] .dh-head{gap:5px}}
+/* The menu's picks: mode and players; Freestyle's four tables in their colours. */
+.dh .dh-seg{gap:6px;width:100%}
+.dh .dh-seg .bui-key{flex:1 1 0;min-width:0;padding:0 .6em}
+.dh .dh-seg .bui-key[aria-pressed="true"]{background:var(--k-sys);color:var(--rim)}
+.dh .dh-park{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;margin:0;padding:0;list-style:none;text-align:left}
+.dh .dh-park li{display:grid;gap:.2em;padding:.55em .7em;background:var(--raised);border:2px solid var(--rim);border-left:8px solid var(--c);border-radius:10px}
+.dh .dh-park small{font-size:.8em;color:var(--muted);font-weight:700;line-height:1.3}
+.dh .dh-rivk{min-width:9em}
+/* The online room card and the connection chip. */
+.dh .dh-roomc form,.dh .dh-roomc [data-for]{display:grid;gap:.6em;justify-items:center;width:100%}
+.dh .dh-roomc [data-for][hidden]{display:none!important}
+.dh .dh-field{display:grid;gap:.35em;width:min(100%,22em);font-size:.85em;letter-spacing:.08em;text-align:left}
+.dh .dh-field input{font:inherit;font-size:1.15em;min-height:44px;padding:0 .7em;border:2px solid var(--rim);border-radius:9px;background:var(--raised);color:var(--ink);letter-spacing:.06em;text-transform:uppercase}
+.dh .dh-field input:focus-visible{outline:3px solid var(--k-sys);outline-offset:2px}
+.dh .dh-rooms{align-items:center}
+.dh .dh-rooms output{min-width:2.4em;font-size:1.3em;font-variant-numeric:tabular-nums}
+.dh .dh-rooms .bui-key{min-width:44px;padding:0}
+.dh .dh-say{min-height:1.2em;color:var(--k-attack)}
+.dh .dh-seats{display:flex;gap:8px;margin:0;padding:0;list-style:none}
+.dh .dh-seats li{padding:.45em .8em;border:2px dashed var(--rim);border-radius:9px;color:var(--muted)}
+.dh .dh-seats li.dh-me{border-style:solid;background:var(--k-sys);color:var(--rim)}
+.dh .dh-seats li.dh-in{border-style:solid;background:var(--k-go);color:var(--rim)}
+.dh .dh-netchip{position:absolute;left:50%;bottom:12px;translate:-50% 0;display:flex;align-items:center;gap:.5em;margin:0;padding:.35em .75em;background:var(--surface);color:var(--ink);border:2px solid var(--rim);border-radius:20px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);font-size:.85em;letter-spacing:.05em;white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden}
+.dh .dh-netchip i{width:.7em;height:.7em;border-radius:50%;background:var(--k-go)}
+.dh .dh-netchip[data-conn=wait] i{background:#ffd166}
+@media (pointer:coarse){.dh .dh-netchip{bottom:auto;top:58px}}
+/* Freestyle on a narrow stage: the score stays (the time chip, the device's best, goes instead). */
+@container stage (max-width:760px){.dh[data-free] .dh-score{display:inline-flex}.dh[data-free][data-solo] .dh-time{display:none}}

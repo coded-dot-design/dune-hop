@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Freestyle (RACE / FREESTYLE on the menu): no race, no clock; four large tables side by side
+  (Salt Flats, The Bowl, Dune Sea, Neon Yard), each its own look and features, linked by launch
+  ramps across the gaps. Air, transfers and drift chains score times a combo multiplier; the best
+  score is kept on the device; left alone it settles.
+- Two players on one screen: split screen (side by side, or stacked on a tall screen), W A S D +
+  left Shift + Space for P1, the arrows + right Shift + Enter for P2, two gamepads, a touch pad in
+  each half. Race (rivals optional) or a three-minute Freestyle jam.
+- Online, two screens: invite code and room (fizlet-rooms, the same server and lobby as Salvo Bay),
+  the host's pick reaches the guest, lockstep on the inputs (`@fzlt/core/presence`) with a state
+  hash check, rematch, and a leaver ends the match on the other screen.
 - Drift: Shift (or DRIFT on a phone) is a handbrake slide; hold it for drift points, banked when the
   slide ends, lost to a hit or a crash; drifts fill NITRO too. (A local stand-in, `src/handling.ts`,
   until Fizlet's `drive` brick ships drift and car contact.)

@@ -5,7 +5,9 @@
 // resumes; the autopilot runs a whole race to the result card, whose time becomes the track's best
 // on the menu; reduced motion still plays (no shake, the camera snaps); the attract lap runs by
 // itself and a tap takes the wheel; dropped onto a page (no host) Escape gives the page back byte
-// for byte and no frame runs after. Waits on state, never on time.
+// for byte and no frame runs after. Freestyle: a jump to the next table scores, and it settles when
+// left alone. Two on one screen: a view each, side by side (stacked on a phone, a pad each); each
+// person's keys drive only their own car. Waits on state, never on time. (Online: tests/online.mjs.)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -107,6 +109,84 @@ try {
     await ctx.close();
   }
 
+  // Freestyle: the menu's FREESTYLE shows the park's four tables; START; gas straight on from the start
+  // flies the out-ramp onto the next table (a transfer, points); let go and, untouched, it settles.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p = await ctx.newPage(), errs = [];
+    p.on("pageerror", (e) => errs.push(e.message));
+    await p.goto(server.url + "/");
+    await until(p, () => window.game, null, "freestyle: mounts");
+    await p.evaluate(() => document.getElementById("board").scrollIntoView({ block: "center" }));
+    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector("[data-seg=mode] [data-v=free]").click());
+    const m = await sh(p, () => { const root = document.querySelector("[data-fizlet-host]").shadowRoot; return { park: root.querySelectorAll(".dh-park li").length, tracks: !!root.querySelector(".dh-tracks").offsetParent, kind: game.getSnapshot().kind }; });
+    assert.deepEqual(m, { park: 4, tracks: false, kind: "free" }, "freestyle: the park in the menu and the preview");
+    await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-start").click());
+    const s0 = await snap(p);
+    assert.deepEqual([s0.status, s0.kind, s0.table, s0.phase], ["running", "free", 0, "race"], "freestyle: no countdown, on the Salt Flats");
+    await p.keyboard.down("ArrowUp");
+    await until(p, () => { const s = game.getSnapshot(); return s.table === 1 && s.transfers >= 1 && s.score > 0; }, null, "freestyle: off the ramp onto THE BOWL, scored");
+    await p.keyboard.up("ArrowUp");
+    const head = await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-lap").textContent);
+    assert.match(head, /THE BOWL/, "freestyle: the HUD names the table");
+    await until(p, () => game.engine.paused.includes("settled"), null, "freestyle: untouched, it settles", 40000);
+    assert.ok((await snap(p)).best > 0, "freestyle: a best on this device");
+    assert.deepEqual(errs, [], "freestyle: no page errors");
+    await ctx.close();
+  }
+
+  // Two on one screen: 2 · SPLIT gives a view each (side by side on a wide stage); W drives only P1,
+  // the arrows only P2. On a phone held upright the views stack, and each has its own touch pad.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p = await ctx.newPage(), errs = [];
+    p.on("pageerror", (e) => errs.push(e.message));
+    await p.goto(server.url + "/");
+    await until(p, () => window.game, null, "split: mounts");
+    await p.evaluate(() => document.getElementById("board").scrollIntoView({ block: "center" }));
+    await sh(p, () => { const root = document.querySelector("[data-fizlet-host]").shadowRoot; root.querySelector("[data-seg=players] [data-v='2']").click(); root.querySelector(".dh-start").click(); });
+    await until(p, () => game.getSnapshot().phase === "race", null, "split: GO");
+    const lay = await sh(p, () => [...document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-view")].filter((v) => !v.hidden).map((v) => { const r = v.querySelector("canvas").getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.width)]; }));
+    assert.equal(lay.length, 2, "split: two views");
+    assert.ok(lay[1][0] >= lay[0][1] && lay[0][2] > 300 && Math.abs(lay[0][2] - lay[1][2]) < 2, `split: side by side ${JSON.stringify(lay)}`);
+    const a = (await snap(p)).cars;
+    assert.equal(a.length, 2);
+    await p.keyboard.down("KeyW");
+    await until(p, (a) => { const c = game.getSnapshot().cars; return Math.hypot(c[0].x - a[0].x, c[0].y - a[0].y) > 40; }, a, "split: W drives P1");
+    await p.keyboard.up("KeyW");
+    const b = (await snap(p)).cars;
+    assert.ok(Math.hypot(b[1].x - a[1].x, b[1].y - a[1].y) < 6, "split: P2 stayed put");
+    await until(p, () => game.getSnapshot().cars[0].speed < 1, null, "split: P1 coasts to a stop", 20000);
+    const c = (await snap(p)).cars;
+    await p.keyboard.down("ArrowUp");
+    await until(p, (c) => { const d = game.getSnapshot().cars; return Math.hypot(d[1].x - c[1].x, d[1].y - c[1].y) > 40; }, c, "split: ↑ drives P2");
+    await p.keyboard.up("ArrowUp");
+    const d = (await snap(p)).cars;
+    assert.ok(Math.hypot(d[0].x - c[0].x, d[0].y - c[0].y) < 12, "split: P1 stayed (more or less) put");
+    assert.deepEqual(errs, [], "split: no page errors");
+    await ctx.close();
+  }
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const p = await ctx.newPage();
+    await p.goto(server.url + "/");
+    await until(p, () => window.game, null, "split phone: mounts");
+    await p.evaluate(() => document.getElementById("board").scrollIntoView({ block: "center" }));
+    await sh(p, () => { const root = document.querySelector("[data-fizlet-host]").shadowRoot; root.querySelector("[data-seg=players] [data-v='2']").click(); root.querySelector(".dh-start").click(); });
+    await until(p, () => game.getSnapshot().phase === "race", null, "split phone: GO");
+    const views = await sh(p, () => [...document.querySelector("[data-fizlet-host]").shadowRoot.querySelectorAll(".dh-view")].filter((v) => !v.hidden).map((v) => { const r = v.getBoundingClientRect(), pad = v.querySelector(".bui-pad"), q = pad.getBoundingClientRect(), g = pad.querySelector("button[aria-label^='Gas']").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, padIn: q.top >= r.top - 1 && q.bottom <= r.bottom + 1, gas: { x: g.x + g.width / 2, y: g.y + g.height / 2 }, big: g.width >= 44 && g.height >= 44 }; }));
+    assert.equal(views.length, 2, "split phone: two views");
+    assert.ok(views[1].top >= views[0].bottom - 1, "split phone: stacked");
+    assert.ok(views.every((v) => v.padIn && v.big), "split phone: a pad in each half, keys ≥ 44 px");
+    const a = (await snap(p)).cars, cdp = await ctx.newCDPSession(p);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: views[1].gas.x, y: views[1].gas.y, id: 1 }] });
+    await until(p, (a) => { const c = game.getSnapshot().cars; return Math.hypot(c[1].x - a[1].x, c[1].y - a[1].y) > 30; }, a, "split phone: P2's GAS drives P2");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const b = (await snap(p)).cars;
+    assert.ok(Math.hypot(b[0].x - a[0].x, b[0].y - a[0].y) < 6, "split phone: P1 stayed put");
+    await ctx.close();
+  }
+
   // Reduced motion: it still plays.
   {
     const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 }, reducedMotion: "reduce" });
@@ -152,7 +232,7 @@ try {
     assert.equal(await p.evaluate(() => game.engine.stats().frames), f0, "drop-in: no frames after Recall");
     await ctx.close();
   }
-  console.log("Dune Hop: menu (select, then START), countdown, keyboard, mouse, both touch layouts (steer pad and stick, remembered), pause/resume, a full race to the result and a track best, reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
+  console.log("Dune Hop: menu (select, then START), countdown, keyboard, mouse, both touch layouts (steer pad and stick, remembered), pause/resume, a full race to the result and a track best, Freestyle (a table-to-table jump, settles), split screen (each person's keys, side by side and stacked with a pad each), reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
 } finally {
   await browser.close();
   await server.close();

@@ -1,12 +1,27 @@
 ---
-// Dune Hop, the game: the stage fills the screen under the header. ?track=<id> races that track at once.
+// Dune Hop, the game: the stage fills the screen under the header. ?track=<id> races that track at once;
+// ?mode=online&room=N&code=… opens the online room card (the code is taken out of the address bar first).
 import Base from '../../layouts/Base.astro';
-const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks, three rivals, jumps, boost pads and nitro.';
+import { ROOMS } from '../../site';
+const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks and three rivals, a Freestyle park of four tables to jump between, two players on one screen or online.';
 ---
 <Base title="Play Dune Hop" description={description} page="play" app>
+  <Fragment slot="head">
+    <!-- An invite code in a link (?code=) is taken out of the address bar before anything else loads. -->
+    <meta name="referrer" content="no-referrer" />
+    <script is:inline>
+      (function () {
+        var u = new URL(location.href), p = u.searchParams, c = p.get("code");
+        if (!p.has("code")) return;
+        p.delete("code");
+        history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+        if (c) window.__duneInvite = c;
+      })();
+    </script>
+  </Fragment>
   <section class="play-stage" aria-labelledby="play-title">
     <h1 id="play-title" class="sr">Play Dune Hop</h1>
-    <div id="game" class="play-host"></div>
+    <div id="game" class="play-host" data-rooms={ROOMS}></div>
   </section>
 </Base>
 
@@ -15,7 +30,7 @@ const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks
   const host = document.getElementById("game")!;
   const want = new URLSearchParams(location.search).get("track");
   const track = TRACKS.some((t: { id: string }) => t.id === want) ? want! : undefined;
-  const game = createDuneHop({ host, keyboard: "page", track });
+  const game = createDuneHop({ host, keyboard: "page", track, rooms: host.dataset.rooms });
   if (track) game.start(track);
   (window as unknown as { game: unknown }).game = game;
 </script>

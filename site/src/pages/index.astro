@@ -4,13 +4,15 @@
 import Base from '../layouts/Base.astro';
 import { base, GZIP, FIZLET, REPO } from '../site';
 import { TRACKS } from '../../../src/tracks.ts';
-const description = 'Dune Hop is a cyberpunk-desert off-road racer on a tabletop: four tracks, three rivals, jumps scored for airtime and clean landings, boost pads and nitro. Free in the browser, by Chris Cooley, built on Fizlet.';
+const description = 'Dune Hop is a cyberpunk-desert off-road racer on a tabletop: four tracks, three rivals, a Freestyle park of four tables to jump between, two players on one screen or online, jumps scored for airtime and clean landings. Free in the browser, by Chris Cooley, built on Fizlet.';
 const kb = (GZIP / 1024).toFixed(1);
 const steps = [
   ['GAS & STEER', 'Hold ↑ (or W) for gas, ← → to steer, ↓ to brake. On a phone: GAS, BRAKE, DRIFT and BOOST on the right, steer on the left. A mouse? Hold the course for gas, drag to steer.'],
   ['FLY IT', 'Off a kicker, gas lifts the nose and the brake dips it. Land it flat: a clean landing scores the airtime and builds a combo.'],
   ['DRIFT & NITRO', 'Shift (or DRIFT) steps the tail out: hold the slide for drift points. Clean landings and drifts fill NITRO: hold Space (or BOOST) on a straight. Pink boost pads on the track give anyone a free shove.'],
   ['TAKE THE FLAG', 'Every gate in order, three laps, three rivals. Nose in or roll it and you tumble back to the last gate. Your best time per track is kept.'],
+  ['FREESTYLE', 'No race, no clock: four big tables side by side, a launch ramp on every gap. Fly from table to table; air, transfers and drift chains score, and every move inside the combo window multiplies the next.'],
+  ['TWO PLAYERS', 'Split screen on one device: P1 on W A S D, left Shift and Space; P2 on the arrows, right Shift and Enter; two gamepads; on a tablet each half gets its own pad. Or online: the same invite code and room on two screens.'],
 ];
 const features = [
   ['Four tabletop tracks', 'From a short sunset loop to a night run at the city\'s edge, each bigger and busier than the last.'],
@@ -18,9 +20,11 @@ const features = [
   ['Rivals who race', 'VOLT, MIRAGE and RUST read the same line you do, brake for the bends, take shortcuts, step round other cars (or lean on them) and crash too.'],
   ['Jumps of every size', 'Kickers, gap jumps with a landing ramp, whoops, crests and banked turns, every lip marked.'],
   ['Night and day', 'Neon contour dunes at night, a hot sunset by day: it follows your light or dark theme.'],
-  ['Same seed, same race', 'The race is deterministic and seeded, so online races can come later.'],
+  ['Freestyle park', 'Salt Flats, The Bowl, Dune Sea and Neon Yard: kickers, a bowl, a spine, dunes, ledges and a rail, each table its own look, linked by launch ramps.'],
+  ['Two players', 'Split screen with a view each (side by side, or stacked on a tall screen), or online over a room: race or a three-minute Freestyle jam, then a rematch.'],
+  ['Same seed, same race', 'The race is deterministic and seeded: online, only the inputs travel and both screens run the same race, checked frame by frame.'],
 ];
-const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound', 'ui'];
+const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound', 'ui', 'presence'];
 ---
 <Base title="Dune Hop · an off-road racer on a tabletop" description={description}>
   <section class="dh-hero" aria-labelledby="dh-title">
@@ -29,7 +33,7 @@ const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound'
     <div class="wrap dh-copy">
       <p class="eyebrow"><span class="dot"></span> A DOM VIRUS GAME · BY CHRIS COOLEY</p>
       <h1 id="dh-title">Dune Hop.<br /><em>Fly the dunes.</em></h1>
-      <p class="lead">An off-road racer on a tabletop. Four tracks, three rivals, every jump scored. Neon at night, a hot sunset by day.</p>
+      <p class="lead">An off-road racer on a tabletop. Four tracks, three rivals, every jump scored. A Freestyle park to fly between tables. Two players on one screen, or online. Neon at night, a hot sunset by day.</p>
       <div class="dh-ctas">
         <a class="bui-key bui-sticker-key bui-call start-key" href={base('play/')}><b>PLAY</b><span>free · in your browser</span></a>
         <p class="dh-tap">Or tap the race to take the wheel.</p>

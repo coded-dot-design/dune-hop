@@ -29,6 +29,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
       } catch (e) {}
     </script>
+    <slot name="head" />
   </head>
   <body data-page={page} data-app={app ? "" : undefined}>
     <a class="skip" href="#main">Skip to content</a>
