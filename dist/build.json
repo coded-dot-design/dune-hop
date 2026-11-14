@@ -2,7 +2,7 @@
   "version": "0.3.0",
   "fizlet": "0.22.0",
   "gzip": {
-    "dune-hop.mjs": 84461,
-    "dune-hop.js": 84689
+    "dune-hop.mjs": 84558,
+    "dune-hop.js": 84804
   }
 }
