@@ -21,7 +21,6 @@ import { buildTrack, TRACK_W, type Track, type TrackDef } from "./tracks.ts";
 import { stunt, BUMP, CLEAN, CB, type Stunt } from "./stunt.ts";
 import { handling, D_AMT, D_ANG, D_SPD } from "./handling.ts";
 import { atan2, sincos, draw, SC as TRIG } from "./math.ts";
-import { withState } from "./state.ts";
 import { tumbler, OVER, RIGHTED } from "./tumble.ts";
 import { items, H_STALL, H_SPIN, H_TUMBLE } from "./items.ts";
 
@@ -90,12 +89,10 @@ export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
   const HUM = Math.max(1, Math.min(4, ro.humans ?? 1)), NC = Math.min(MAX_CARS, HUM + Math.max(0, ro.rivals ?? 3));
   /** Rival profile of car c (people: none). */
   const rival = (c: number) => RIVALS[(c - HUM) % RIVALS.length]!;
-  // Each car and every byte of its state (in `bytes`: a rollback restores whole cars).
-  const cars: Drive[] = [], CS: Uint8Array[] = [];
-  for (let c = 0; c < NC; c++) {
-    const [v, st] = withState(() => drive(t, { ...CAR_OPTS, top: c >= HUM ? 12 * (0.985 + rival(c).pace * 0.02) : 12, id: c }));
-    cars.push(v), CS.push(...st.filter((b) => b.buffer !== v.landing.buffer));
-  }
+  // Each car; every byte of its state is the brick's `state` (in `bytes`: a rollback restores whole cars).
+  const cars: Drive[] = [];
+  for (let c = 0; c < NC; c++) cars.push(drive(t, { ...CAR_OPTS, top: c >= HUM ? 12 * (0.985 + rival(c).pace * 0.02) : 12, id: c }));
+  const CS = cars.map((v) => v.state);
   // Each drive's state, read straight from its Float64Array (the one `landing` is a view into): yaw 0,
   // air 6, speed 8. Its getters return fresh numbers, and with four cars (four sets of getters) the
   // optimiser can't inline them, so every read would allocate; the arrays never do.
@@ -643,7 +640,7 @@ export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
     kind: "race" as const,
     HX: tr.HX, HZ: tr.HZ, LIPS: Float64Array.from(lips), PADV: Float64Array.from(pads), PAD_LEN: tr.PAD_LEN, PAD_W: tr.PAD_W,
     /** The whole state as bytes (the online desync check hashes it). */
-    bytes: [C, R, RS, pos, rot, TV, N, fin, order, hd.DR, ...DS, ...scs.map((s) => s.S), ...it.bytes, ...CS].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
+    bytes: [C, R, RS, pos, rot, TV, N, fin, order, hd.DR, ...scs.map((s) => s.S), ...it.bytes, ...CS].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
     /** BATTLE: the items (boxes, held, bolts, hazards), or none on. */
     battle: BATTLE, items: it,
     def, tr, t, cars, C, R, pos, rot, rank, order, fin, sc, scs, N, ev, IN, AUTO, DR: hd.DR,

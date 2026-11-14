@@ -149,7 +149,7 @@ node scripts/shots.mjs  # the hero's still poster and the share image, from the 
 `src/tracks.ts` (the tracks as data and the course builder), `src/race.ts` (the race: cars, gates,
 laps, rivals, boost), `src/tumble.ts` (the tumble that rights itself), `src/items.ts` (BATTLE), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
 session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room),
-`src/rollback.ts` (rollback over the room: guesses, snapshots, corrections, a leaver), `src/state.ts` (a brick's whole state as bytes),
+`src/rollback.ts` (rollback over the room: guesses, snapshots, corrections, a leaver),
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 
