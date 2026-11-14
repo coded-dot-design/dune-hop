@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+- No more crashing out. A bad landing, a flip or a rollover is a short tumble: the buggy rights
+  itself and drives on from where it came down. Only flying off the table's edge (or into
+  Freestyle's gap) puts you back at your gate or table. Every mode.
+- BATTLE (CLEAN / BATTLE on the menu, remembered; the host's pick online): item boxes on the track
+  and on every Freestyle table. Drive through one to hold an item; ITEM fires it (F, E or right Ctrl;
+  P2 in a split: right Ctrl, `.` or numpad 0; the ★ key on a phone; a gamepad's left bumper).
+  Blaster (three bolts: a hit stalls the car), oil slick (dropped behind: the next car spins out),
+  zap mine (armed after a moment: a big tumble that rights itself), shield (blocks one hit). No
+  health, nobody is ever out. The back of the pack draws better; the rivals pick up and fire theirs
+  too. Hits go off in Fizlet's fx blasts, with sound.
+- King of the Table (Freestyle with two or more, split or online): a glowing home pad each. Points
+  are carried and bank only on your pad; landing on someone else's pad steals a fifth of their bank;
+  a tumble or a hit spills a quarter of what you carry. The most banked when the jam ends wins.
+- Online: BATTLE and King of the Table for up to four, in lockstep (items, boxes and hits in the
+  state hash).
+- The size budget is 86,000 bytes gzip (the build: 82,549).
+
 ## 0.2.2
 
 - Online for up to four phones, a view each. ONLINE opens a room card made for a phone: your name,
