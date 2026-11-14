@@ -8,8 +8,11 @@
 // Two people on one screen get a split screen (side by side on a wide stage, stacked on a tall one):
 // a view each, its own diorama, camera and HUD; each half its own touch pad. Two screens play online
 // (./net.ts): the sim runs in lockstep on both, only inputs travel.
+// BATTLE (the menu's CLEAN / BATTLE): item boxes on the track, one item held, fired with ITEM (F, E
+// or right Ctrl; a key on the pad; a gamepad's left bumper); hits blow up in @fzlt/core/fx's blasts.
+// Freestyle with two or more is King of the Table: a glowing home pad each, carry points home to bank.
 // Bricks: the kernel (fixed step, settle, the ledger: every page write goes back on Recall),
-// @fzlt/core/diorama, terrain, drive (and its `chase` camera), input, pad, sound, ui, presence.
+// @fzlt/core/diorama, terrain, drive (and its `chase` camera), input, pad, sound, fx, ui, presence.
 // Keys: ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro, P pause, V view,
 // M mute, R restart, T menu; Escape pauses (or, dropped onto a page, gives the page back). Two on one
 // screen: P1 W A S D, left Shift drift, Space (or Q) nitro; P2 the arrows, right Shift drift, Enter
@@ -21,14 +24,16 @@ import { chase } from "@fzlt/core/drive";
 import { controls, type Controls } from "@fzlt/core/input";
 import { pad, type Pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
+import { effects, type Effects } from "@fzlt/core/fx";
 import { mount as buiMount } from "@fzlt/core/ui";
 import type { Transport } from "@fzlt/core/presence";
-import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
+import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, E_RIGHT, E_ITEM, E_FIRE, E_HIT, E_BLOCK, E_BANK, E_STEAL, E_SPILL, STALL, KPOT, KVICT, type Race } from "./race.ts";
+import { ITEM_NAMES, IT_BLASTER, IT_OIL, IT_MINE, IT_SHIELD, H_STALL, H_SPIN, BK, BOK, ZK, NBOLT, NHAZ } from "./items.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
-import { encode, decode, packMode, unpackMode, hashOf, joinRoom, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, SEATS, NAME, type Lockstep } from "./net.ts";
+import { encode, decode, packMode, unpackMode, hashOf, joinRoom, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, SEATS, NAME, type Lockstep } from "./net.ts";
 
 const TAU = 6.283185307179586;
 type Sim = Race | Freestyle;
@@ -119,7 +124,10 @@ const bestOf = (id: string) => {
   return v > 0 ? v : 0;
 };
 const num = (n: number) => Math.round(n).toLocaleString("en-US");
-const HEAD = `<b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b><b class="dh-chip dh-drift" hidden><small>DRIFT</small><span>0</span></b>`;
+/** BATTLE's item icons (the HUD chip): none, blaster, oil, mine, shield. */
+const ICO = (d: string) => `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="${d}"/></svg>`;
+const ITEM_ICON = [ICO("M6 10h8"), ICO("M3 8h9l3-3v10l-3-3H3zM16 10h2"), ICO("M10 3c3 4 5 6.5 5 9a5 5 0 0 1-10 0c0-2.5 2-5 5-9z"), ICO("M10 4v3M4.5 6.5l2 2M15.5 6.5l-2 2M5 13a5 5 0 0 1 10 0zM3.5 13h13"), ICO("M10 2.5l6 2.5v4.5c0 4-2.7 6.7-6 8-3.3-1.3-6-4-6-8V5z")];
+const HEAD = `<b class="dh-chip dh-pos"><span>4</span><small>/4</small></b><b class="dh-chip dh-lap"><small>LAP</small><span>1/3</span></b><b class="dh-chip dh-time"><span>0:00.0</span><small></small></b><b class="dh-chip dh-score"><span>0</span><i>×1</i></b><b class="dh-chip dh-nitro"><small>NITRO</small><b><i></i></b></b><b class="dh-chip dh-drift" hidden><small>DRIFT</small><span>0</span></b><b class="dh-chip dh-item" hidden><i></i><span></span></b><b class="dh-chip dh-carry" hidden><small>CARRY</small><span>0</span><small>→ HOME</small></b>`;
 
 /** One view of the table: a canvas and its diorama, its camera, the car it follows, its HUD. */
 interface View {
@@ -154,6 +162,11 @@ interface View {
   /** [safe top, safe bottom]. */
   safe: Float64Array;
   was: Float64Array;
+  /** BATTLE: the item boxes (a group each, spun and bobbed), the view's blasts (screen space: fx)
+   *  and the world point the last one is pinned to [x, y, z, screen x, screen y]. */
+  boxes: DioramaObject[];
+  fx: Effects;
+  FXA: Float64Array;
 }
 
 export function createDuneHop(o: DuneHopOptions = {}) {
@@ -191,6 +204,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     `<div class="dh-card dh-menu" role="dialog" aria-label="Dune Hop menu" hidden><b>DUNE HOP</b>` +
     segRow("mode", "Mode", [["race", "RACE"], ["free", "FREESTYLE"]]) +
     segRow("players", "Players", [["1", "1 PLAYER"], ["2", "2 · SPLIT"], ["net", "ONLINE"]]) +
+    segRow("set", "Race setting", [["clean", "CLEAN"], ["battle", "BATTLE · ITEMS"]]) +
     `<p class="dh-sub dh-m-sub"></p><ul class="dh-tracks"></ul><ul class="dh-park" hidden></ul>` +
     `<p class="dh-row dh-m-rivals" hidden><small class="dh-sub">RIVALS</small><button type="button" class="bui-key dh-rivk" aria-pressed="true">3 RIVALS</button></p>` +
     `<p class="dh-row"><button type="button" class="bui-key dh-again dh-start">START</button></p><p class="dh-sub dh-menu-keys"></p></div>` +
@@ -214,21 +228,23 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   for (let c = 0; c < MAX_CARS; c++) board.insertAdjacentHTML("beforeend", `<li><b></b><i></i><span></span><em></em></li>`);
   const rows = [...board.children] as HTMLElement[];
 
-  const snd = sound(engine, { cues: { count: "click", go: "ready", gate: "click", lap: "power", clean: "power", sketchy: "click", crash: "boom", respawn: "ready", boost: "power", bump: "hit", win: "win", lose: "end" }, volume: 0.1, on: o.sound !== false });
+  const snd = sound(engine, { cues: { count: "click", go: "ready", gate: "click", lap: "power", clean: "power", sketchy: "click", crash: "boom", respawn: "ready", boost: "power", bump: "hit", win: "win", lose: "end", item: "power", blast: "fire", drop: "click", zap: "boom", stall: "hit", oil: "hurt", block: "ready", bank: "win", steal: "power" }, volume: 0.1, on: o.sound !== false });
   const paintMute = () => (muteK.textContent = snd.on ? "♪" : "×", muteK.setAttribute("aria-pressed", "" + snd.on));
   paintMute();
   // Two controllers: P1 (every key alone; W A S D in a split) and P2 (the arrows in a split).
-  const KEYS = { left: [], right: [], gas: [], brake: [], nitro: [], drift: [] };
+  const KEYS = { left: [], right: [], gas: [], brake: [], nitro: [], drift: [], item: [] };
   const c = controls(engine, { keys: KEYS, target: play }), c2 = controls(engine, { keys: KEYS, target: play });
-  const GAS = c.id("gas"), BRAKE = c.id("brake"), NITRO = c.id("nitro"), DRIFT = c.id("drift");
+  const GAS = c.id("gas"), BRAKE = c.id("brake"), NITRO = c.id("nitro"), DRIFT = c.id("drift"), ITEM = c.id("item");
+  const PADK = ["gas", "brake", "left", "right", "nitro", "drift", "item"];
   const ctl = (p: number): Controls => (p ? c2 : c);
 
   // ---- settings: the menu's picks (remembered on the device) ----
-  const pick = { mode: "race" as "race" | "free", players: "1" as "1" | "2" | "net", rivals: 3 };
+  const pick = { mode: "race" as "race" | "free", players: "1" as "1" | "2" | "net", rivals: 3, battle: false };
   try {
     const v = JSON.parse(store.get("menu") || "null");
-    if (v && typeof v === "object") (pick.mode = v.mode === "free" ? "free" : "race"), (pick.players = v.players === "2" ? "2" : "1"), (pick.rivals = v.rivals === 0 ? 0 : 3);
+    if (v && typeof v === "object") (pick.mode = v.mode === "free" ? "free" : "race"), (pick.players = v.players === "2" ? "2" : "1"), (pick.rivals = v.rivals === 0 ? 0 : 3), (pick.battle = v.battle === true);
   } catch {}
+  const saveMenu = () => store.set("menu", JSON.stringify({ mode: pick.mode, players: pick.players === "net" ? "1" : pick.players, rivals: pick.rivals, battle: pick.battle }));
   if (qs.get("mode") === "online") pick.players = "net";
   // Split screen on one phone is held back (owner, 2026-11-14): a touch-only device (a coarse pointer
   // and no fine one, so not a laptop with a touch screen) gets 1 PLAYER and ONLINE. The code stays.
@@ -257,11 +273,12 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false },
       CTP: new Float64Array(3), VEL: new Float64Array(3), target: null as unknown as View["target"], car: i,
       head: vh.querySelector(".dh-head") as HTMLElement, els: [], toastEl: vh.querySelector(".dh-toast") as HTMLElement, countEl: vh.querySelector(".dh-count") as HTMLElement,
-      toastT: 0, countT: 0, shake: 0, safe: new Float64Array(2), was: new Float64Array(16).fill(-1),
+      toastT: 0, countT: 0, shake: 0, safe: new Float64Array(2), was: new Float64Array(20).fill(-1),
+      boxes: [], fx: effects({ cap: 320, gravity: 260 }), FXA: new Float64Array(5),
     };
     v.target = { pos: v.CTP, yaw: 0, vel: v.VEL };
     const q = (s: string) => v.head.querySelector(s) as HTMLElement;
-    v.els = [q(".dh-pos span"), q(".dh-lap span"), q(".dh-time span"), q(".dh-time small"), q(".dh-score span"), q(".dh-score i"), q(".dh-drift"), q(".dh-drift span"), q(".dh-nitro"), q(".dh-nitro b i"), q(".dh-pos small"), q(".dh-lap small"), q(".dh-pos"), q(".dh-lap"), q(".dh-time")];
+    v.els = [q(".dh-pos span"), q(".dh-lap span"), q(".dh-time span"), q(".dh-time small"), q(".dh-score span"), q(".dh-score i"), q(".dh-drift"), q(".dh-drift span"), q(".dh-nitro"), q(".dh-nitro b i"), q(".dh-pos small"), q(".dh-lap small"), q(".dh-pos"), q(".dh-lap"), q(".dh-time"), q(".dh-item"), q(".dh-item i"), q(".dh-item span"), q(".dh-carry"), q(".dh-carry span")];
     v.d = diorama(canvas, { light: P.light, ambient: P.amb, background: () => P.table, overlay: (ctx) => drawOverlay(ctx, v), get shadowColor() { return P.shadow; }, maxFaces: 12000 });
     views.push(v);
     return v;
@@ -286,9 +303,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     brake: { intent: "brake", label: "", name: "Brake (down arrow)", icon: ICON("M5 5l5 5 5-5M4.5 15h11"), key: "↓", role: "attack", hold: true },
     drift: { intent: "drift", label: "", name: "Drift, the handbrake (shift)", icon: ICON("M4 16c0-6.5 4-10 11-10M12 3l3 3-3 3"), key: "⇧", role: "fallin", hold: true },
     nitro: { intent: "nitro", label: "", name: "Nitro boost (space)", icon: ICON("M11.5 2L5 11h4.5L8 18l7-9.5h-4.5z"), key: "␣", role: "sys", hold: true },
+    item: { intent: "item", label: "", name: "Use item (F)", icon: ICON("M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.8l5-.7z"), key: "F", role: "flag", hold: true },
   } as const;
   const padOf = (cc: Controls, host: HTMLElement) => {
-    const p = pad(engine, cc, { scheme: steer === "stick" ? "stick" : "buttons", move: ["", "", "left", "right"], actions: [KEY.gas, KEY.brake, KEY.drift, KEY.nitro], host });
+    const p = pad(engine, cc, { scheme: steer === "stick" ? "stick" : "buttons", move: ["", "", "left", "right"], actions: [KEY.gas, KEY.brake, KEY.drift, KEY.nitro, KEY.item], host });
     p.el.classList.add("dh-pad");
     for (const b of p.el.querySelectorAll<HTMLElement>(".bui-pad-keys button")) b.title = b.getAttribute("aria-label")!.replace(/ \(.*$/, "");
     return p;
@@ -306,14 +324,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     steer = steer === "stick" ? "arrows" : "stick";
     store.set("steer", steer);
     for (const p of [thePad, pad2]) p?.setScheme(steer === "stick" ? "stick" : "buttons");
-    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
+    for (const cc of [c, c2]) for (const k of PADK) cc.press(k, false);
     paintPad();
   }
 
   // ---- the sim and the scene ----
   let def = trackById(o.track ?? TRACKS[0]!.id);
   /** What the sim was made for: mode, people, rivals, track, laps. */
-  const want = { mode: "race" as "race" | "free", humans: 1, rivals: 3, laps: o.laps ?? 0 };
+  const want = { mode: "race" as "race" | "free", humans: 1, rivals: 3, laps: o.laps ?? 0, battle: false };
   let sim: Sim = createRace(def, o.seed ?? 1, { laps: want.laps });
   const isRace = () => sim.kind === "race";
   const rc = () => sim as Race;
@@ -475,6 +493,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       }
     }
     for (let k = 0; k < sim.count; k++) buildCar(v, k);
+    // BATTLE: item boxes, a glass cube with a lit core, each its own group (spun and bobbed in pose).
+    v.boxes = [];
+    if (sim.battle)
+      for (let b = 0; b < sim.items.NB; b++) {
+        const id = "box" + b, B = sim.items.B;
+        v.boxes.push(d.add({ id, shape: "group", size: [1, 0, 1], pos: [B[b * BK]!, B[b * BK + 1]! - 0.5, B[b * BK + 2]!], pick: false }));
+        v.boxes.push(d.add({ size: [0.95, 0.95, 0.95], on: id, color: b & 1 ? P.tip2 : P.tip, alpha: 0.55, emissive: true, pick: false }));
+        v.boxes.push(d.add({ size: [0.46, 0.46, 0.46], pos: [0, 0.24, 0], rot: [0.6, 0, 0.6], on: id, color: P.lip, emissive: true, pick: false }));
+      }
     v.dust = d.points({ cap: DUST, color: P.dust, layer: 4 });
     v.spark = d.points({ cap: SPARK, color: P.spark, layer: 6 });
     for (let k = 0; k < sim.count; k++) d.decal("car" + k, 4, (ctx) => paintTrail(ctx, v, k));
@@ -548,6 +575,13 @@ export function createDuneHop(o: DuneHopOptions = {}) {
 
   function pose(v: View) {
     const t = sim.t, HX = sim.HX, HZ = sim.HZ;
+    if (sim.battle)
+      for (let b = 0; b < v.boxes.length; b += 3) {
+        const B = sim.items.B, o = (b / 3) * BK, out = B[o + 3]! > 0, g = v.boxes[b]!;
+        for (let k = 0; k < 3; k++) v.boxes[b + k]!.hidden = out;
+        g.rot[1] = pulse * 1.7 + b;
+        g.pos[1] = B[o + 1]! - 0.5 + (reduced ? 0 : Math.sin(pulse * 3 + b) * 0.12);
+      }
     for (let k = 0; k < sim.count; k++) {
       const car = v.cars[k]!, dv = sim.cars[k]!, p = k * 3, tum = sim.C[k * K + PH] === CRASH;
       car.pos[0] = sim.pos[p]!; car.pos[1] = sim.pos[p + 1]!; car.pos[2] = sim.pos[p + 2]!;
@@ -692,9 +726,47 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         if (you) {
           engine.events.emit("crash");
           vw.shake = reduced ? 0 : 0.5;
-          toast(vi, val ? (race ? "OFF THE TABLE!" : "INTO THE GAP!") : "WIPEOUT", "bad");
-          say(val ? (race ? "Off the table" : "Into the gap") : "Wipeout");
+          toast(vi, val === 1 ? (race ? "OFF THE TABLE!" : "INTO THE GAP!") : val === 2 ? "ZAPPED! HANG ON" : "TUMBLE!", "bad");
+          say(val === 1 ? (race ? "Off the table" : "Into the gap") : val === 2 ? "Zapped" : "Tumble");
         }
+      } else if (type === E_RIGHT) {
+        dustBurst(sim.pos[p]!, sim.pos[p + 1]! - 0.4, sim.pos[p + 2]!, you ? 12 : 6);
+        if (you) engine.events.emit("respawn"), toast(vi, "BACK ON YOUR WHEELS", "go");
+      } else if (type === E_ITEM) {
+        seen.item++;
+        if (you) engine.events.emit("item"), toast(vi, `GOT ${ITEM_NAMES[val]} · ${keyName(vi)}`, "boost"), say(`Got a ${ITEM_NAMES[val]!.toLowerCase()}`);
+      } else if (type === E_FIRE) {
+        seen.fire++;
+        engine.events.emit(val === IT_BLASTER ? "blast" : val === IT_SHIELD ? "block" : "drop");
+        if (you && val === IT_SHIELD) toast(vi, "SHIELD ON", "go");
+      } else if (type === E_HIT) {
+        const kind = val >> 3, by = val & 7, bi = viewOf(by);
+        seen.hit++;
+        engine.events.emit(kind === H_STALL ? "stall" : kind === H_SPIN ? "oil" : "zap");
+        blast(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, kind === H_STALL ? 0.55 : kind === H_SPIN ? 0.4 : 1.3);
+        burst(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, kind === H_STALL ? 14 : 10, 4);
+        if (you) (vw.shake = reduced ? 0 : kind === 3 ? 0.6 : 0.32), kind !== 3 && toast(vi, kind === H_STALL ? `STALLED · ${label(by)}'S BLASTER` : `OILED · ${label(by)}`, "bad"), say(kind === H_STALL ? "Stalled" : kind === H_SPIN ? "Spun out on oil" : "Zapped");
+        if (bi >= 0 && by !== car) toast(bi, `HIT ${label(car)}!`, "clean");
+      } else if (type === E_BLOCK) {
+        seen.block++;
+        engine.events.emit("block");
+        blast(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, 0.3);
+        if (you) toast(vi, "SHIELD BLOCKED IT", "go");
+        const bi = viewOf(val);
+        if (bi >= 0 && val !== car) toast(bi, `${label(car)} BLOCKED IT`, "meh");
+      } else if (type === E_BANK) {
+        seen.bank++;
+        if (you) engine.events.emit("bank"), toast(vi, `BANKED +${num(val)}`, "drift"), say(`Banked ${val}`);
+        burst(sim.pos[p]!, sim.pos[p + 1]! + 0.6, sim.pos[p + 2]!, 16, 4);
+      } else if (type === E_STEAL) {
+        seen.steal++;
+        const victim = sim.C[car * K + KVICT]!, ti = viewOf(victim);
+        engine.events.emit("steal");
+        blast(sim.pos[p]!, sim.pos[p + 1]! + 0.3, sim.pos[p + 2]!, 0.5);
+        if (you) toast(vi, `STOLE ${num(val)} FROM ${label(victim)} · TAKE IT HOME`, "boost"), say(`Stole ${val} from ${label(victim)}`);
+        if (ti >= 0 && ti !== vi) toast(ti, `${label(car)} STOLE ${num(val)}`, "bad");
+      } else if (type === E_SPILL && you) {
+        toast(vi, `SPILLED −${num(val)}`, "meh");
       } else if (type === E_RESPAWN && you) {
         engine.events.emit("respawn");
         DROP[car] = 0.45;
@@ -704,7 +776,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       else if (type === E_WRONG && you) toast(vi, "WRONG WAY", "bad"), say("Wrong way");
       else if (type === E_DRIFT && you) engine.events.emit("clean"), toast(vi, `DRIFT +${num(val)}`, "drift"), say(`Drift, ${val} points`);
       else if (type === E_DRIFT_LOST && you) toast(vi, `DRIFT LOST −${val}`, "meh");
-      else if (type === E_SPIN) {
+      else if (type === E_SPIN && !sim.C[car * K + STALL]) {
         engine.events.emit("bump");
         burst(sim.pos[p]!, sim.pos[p + 1]! + 0.3, sim.pos[p + 2]!, you ? 14 : 8, 3);
         if (you) (vw.shake = reduced ? 0 : 0.3), toast(vi, "SPUN OUT", "bad"), say("Spun out");
@@ -721,6 +793,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
     sim.clear();
   }
+  /** BATTLE events seen (tests, harnesses). */
+  const seen = { item: 0, fire: 0, hit: 0, block: 0, bank: 0, steal: 0 };
+  /** The item key's name for view vi's player. */
+  const keyName = (vi: number) => (thePad.el.offsetParent ? "TAP ★" : NV > 1 ? (vi ? "RIGHT CTRL" : "F") : "F");
   const ordinal = (n: number) => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
   function toast(vi: number, text: string, kind: string) {
     if (mode === "demo" || vi < 0) return;
@@ -781,6 +857,18 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     set(7, on, () => E[8]!.classList.toggle("dh-on", !!on));
     const dp = Math.round(C[o + DPTS]!), dOn = C[o + DTIME]! > 0.15 && dp > 0;
     set(8, dOn ? dp : -1, () => ((E[6]!.hidden = !dOn), (E[7]!.textContent = "" + dp)));
+    // BATTLE: what you hold (or your shield); King of the Table: what you carry.
+    const hi = sim.battle ? sim.items.held(car) : -1, sh = sim.battle && sim.items.shield(car) > 0 ? 1 : 0;
+    set(9, hi * 2 + sh, () => {
+      E[15]!.hidden = hi < 0;
+      if (hi < 0) return;
+      E[16]!.innerHTML = ITEM_ICON[hi || (sh ? IT_SHIELD : 0)]!;
+      E[17]!.textContent = hi ? ITEM_NAMES[hi]! : sh ? "SHIELD ON" : "NO ITEM";
+      E[15]!.classList.toggle("dh-has", hi > 0);
+      E[15]!.classList.toggle("dh-sh", !hi && !!sh);
+    });
+    const kp = !race && fs().king ? Math.round(C[o + KPOT]!) : -1;
+    set(10, kp, () => ((E[18]!.hidden = kp <= 0), (E[19]!.textContent = num(kp))));
   }
   function sharedHud() {
     const R = sim.R, solo = NV === 1 && !net.on;
@@ -815,7 +903,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   function menuWrite() {
     for (const s of hud.querySelectorAll<HTMLElement>("[data-seg]")) {
-      const cur = s.dataset.seg === "mode" ? pick.mode : pick.players;
+      const cur = s.dataset.seg === "mode" ? pick.mode : s.dataset.seg === "set" ? (pick.battle ? "battle" : "clean") : pick.players;
       for (const b of s.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", "" + (b.dataset.v === cur));
     }
     const free = pick.mode === "free", two = pick.players !== "1";
@@ -826,8 +914,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     rk.textContent = pick.rivals ? "3 RIVALS" : "NO RIVALS";
     rk.setAttribute("aria-pressed", "" + !!pick.rivals);
     $(".dh-m-sub").textContent = free
-      ? pick.players === "1" ? `Four tables, no clock. Jump the ramps from table to table; air, transfers and drifts score, the combo multiplies. Best here: ${num(freeBest)}.` : "A three-minute jam on the four tables: the higher score wins."
+      ? pick.players === "1" ? `Four tables, no clock. Jump the ramps from table to table; air, transfers and drifts score, the combo multiplies. Best here: ${num(freeBest)}.` : "King of the Table: three minutes, a home pad each. Points only count once you bring them home to your pad; land on someone else's to steal a fifth of theirs."
       : pick.players === "1" ? "Pick a track, then START. Three rivals, the clock, every jump and drift scored." : pick.players === "2" ? "Two on this screen: a view each. Pick a track, then START." : "Two to four phones over the internet, each its own view: you need an invite code.";
+    $(".dh-m-sub").textContent += pick.battle ? " BATTLE: grab boxes for a blaster, oil, a zap mine or a shield (F, or ★ on a phone)." : "";
     $(".dh-start").textContent = pick.players === "net" ? "NEXT" : "START";
     tracksEl.innerHTML = "";
     TRACKS.forEach((d, i) => {
@@ -843,7 +932,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     });
     if (!parkEl.childElementCount)
       parkEl.innerHTML = ["SALT FLATS", "THE BOWL", "DUNE SEA", "NEON YARD"].map((n, i) => `<li style="--c:var(--dh-t${i})"><b>${n}</b><small>${["Kicker line, tabletop, whoops, a drift ring", "A deep bowl, a spine, a hip", "Ridged dunes and a banked U-turn", "A rail, stair ledges, a funbox"][i]}</small></li>`).join("");
-    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Left thumb: the stick steers (push up for gas, pull down to brake). Right thumb: GAS, BRAKE, DRIFT, BOOST." : pick.players === "2" ? "P1: W A S D · left SHIFT drift · SPACE nitro. P2: arrows · right SHIFT drift · ENTER nitro. Gamepads work too." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
+    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? `Left thumb: the stick steers (push up for gas, pull down to brake). Right thumb: GAS, BRAKE, DRIFT, BOOST${pick.battle ? ", ★ ITEM" : ""}.` : pick.players === "2" ? `P1: W A S D · left SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""}. P2: arrows · right SHIFT drift · ENTER nitro${pick.battle ? " · right CTRL item" : ""}. Gamepads work too.` : `↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""} · P pause · V view`;
   }
   function showCard(which: HTMLElement | null) {
     for (const el of [menu, pauseC, result, roomC]) el.hidden = el !== which;
@@ -901,12 +990,13 @@ export function createDuneHop(o: DuneHopOptions = {}) {
 
   // ---- flow ----
   /** Make the sim for these settings (a new one only when something changed). */
-  function setup(m: "race" | "free", humans: number, rivals: number, id: string) {
+  function setup(m: "race" | "free", humans: number, rivals: number, id: string, battle = pick.battle) {
     const d = trackById(id);
-    if (want.mode === m && want.humans === humans && want.rivals === rivals && (m === "free" || d === def)) return;
+    if (want.mode === m && want.humans === humans && want.rivals === rivals && want.battle === battle && (m === "free" || d === def)) return;
     def = d;
-    (want.mode = m), (want.humans = humans), (want.rivals = rivals);
-    sim = m === "free" ? createFreestyle(o.seed ?? 1, { humans }) : createRace(def, o.seed ?? 1, { humans, rivals: humans > 1 ? rivals : 3, laps: want.laps });
+    (want.mode = m), (want.humans = humans), (want.rivals = rivals), (want.battle = battle);
+    sim = m === "free" ? createFreestyle(o.seed ?? 1, { humans, battle }) : createRace(def, o.seed ?? 1, { humans, rivals: humans > 1 ? rivals : 3, laps: want.laps, battle });
+    stage.toggleAttribute("data-battle", battle);
     P = pal();
     stage.toggleAttribute("data-day", !P.night);
     stage.toggleAttribute("data-free", m === "free");
@@ -928,14 +1018,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     NV = n;
     if (views[1]) views[1].el.hidden = !on;
     stage.toggleAttribute("data-split", on);
-    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
+    for (const cc of [c, c2]) for (const k of PADK) cc.press(k, false);
     V[0] = 1;
   }
   let moved = false;
   function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0), fresh = true) {
     if (fresh) {
       const humans = net.on ? net.players : pick.players === "2" ? 2 : 1;
-      setup(net.on ? net.pick.mode : pick.mode, humans, net.on ? net.pick.rivals : pick.rivals, id);
+      setup(net.on ? net.pick.mode : pick.mode, humans, net.on ? net.pick.rivals : pick.rivals, id, net.on ? net.pick.battle : pick.battle);
       setSplit(!net.on && humans > 1);
       sim.reset(seed);
     }
@@ -1016,7 +1106,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     }
     showCard(on ? pauseC : null);
     PD[0] = 0;
-    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
+    for (const cc of [c, c2]) for (const k of PADK) cc.press(k, false);
     if (on) ($(".dh-resume") as HTMLButtonElement).focus({ preventScroll: true });
     else play.focus({ preventScroll: true });
     engine.wake();
@@ -1181,6 +1271,8 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    if (sim.battle) paintHazards(ctx, v);
+    if (!race && fs().king) paintHomes(ctx, v);
     // The Salt Flats' drift ring: a neon circle to slide round.
     if (!race) {
       const [rx, rz, rr] = fs().park.ring as [number, number, number];
@@ -1231,6 +1323,133 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         }
       }
     }
+  }
+  /** A circle on the ground at (x, z), radius r, as a path (false when it is behind the camera). */
+  function groundRing(ctx: CanvasRenderingContext2D, d: Diorama, x: number, z: number, r: number, lift: number) {
+    const t = sim.t;
+    ctx.beginPath();
+    for (let i = 0; i <= 24; i++) {
+      const a = (i / 24) * TAU, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (!d.project(px, t.height(px, pz) + lift, pz, tmp) || tmp[2]! < 0.5) return false;
+      i ? ctx.lineTo(tmp[0]!, tmp[1]!) : ctx.moveTo(tmp[0]!, tmp[1]!);
+    }
+    ctx.closePath();
+    return true;
+  }
+  /** BATTLE on the ground: oil slicks (a dark pool with a sheen) and zap mines (a disc, a light
+   *  that blinks once it is armed). */
+  function paintHazards(ctx: CanvasRenderingContext2D, v: View) {
+    const Z = sim.items.Z, d = v.d, f = d.focal();
+    for (let k = 0; k < NHAZ; k++) {
+      const o = k * ZK, kind = Z[o]!;
+      if (!kind) continue;
+      const x = Z[o + 1]!, z = Z[o + 3]!;
+      if (kind === IT_OIL) {
+        if (!groundRing(ctx, d, x, z, 1.45, 0.05)) continue;
+        ctx.fillStyle = P.night ? "#05030c" : "#1b1020";
+        ctx.globalAlpha = 0.86;
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = P.tip2;
+        ctx.lineWidth = Math.max(1.5, (f * 0.07) / tmp[2]!);
+        ctx.stroke();
+        if (groundRing(ctx, d, x + 0.35, z - 0.3, 0.55, 0.06)) (ctx.strokeStyle = P.tip), (ctx.globalAlpha = 0.6), ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        if (!groundRing(ctx, d, x, z, 0.62, 0.08)) continue;
+        const armed = Z[o + 4]! <= 0, on = armed && (reduced || Math.sin(pulse * 12) > 0);
+        ctx.fillStyle = P.chassis;
+        ctx.fill();
+        ctx.strokeStyle = armed ? P.lip : P.hub;
+        ctx.lineWidth = Math.max(1.5, (f * 0.08) / tmp[2]!);
+        ctx.stroke();
+        if (d.project(x, sim.t.height(x, z) + 0.25, z, tmp2) && tmp2[2]! > 0.5) {
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = on ? P.tip2 : P.hub;
+          ctx.beginPath();
+          ctx.arc(tmp2[0]!, tmp2[1]!, Math.max(2, ((on ? 0.3 : 0.16) * f) / tmp2[2]!), 0, TAU);
+          ctx.fill();
+          ctx.globalCompositeOperation = "source-over";
+        }
+      }
+    }
+  }
+  /** King of the Table: each person's home pad, a ring in their colour (it pulses while they carry). */
+  function paintHomes(ctx: CanvasRenderingContext2D, v: View) {
+    const f = fs(), d = v.d;
+    for (let c = 0; c < f.count; c++) {
+      const x = f.HOME[c * 2]!, z = f.HOME[c * 2 + 1]!, carry = f.C[c * K + KPOT]! > 0;
+      if (!groundRing(ctx, d, x, z, f.HOME_R, 0.06)) continue;
+      const w = Math.max(2, (d.focal() * 0.2) / tmp[2]!);
+      ctx.fillStyle = P.cars[c]![0]!;
+      ctx.globalAlpha = 0.18;
+      ctx.fill();
+      ctx.globalAlpha = carry && !reduced ? 0.65 + 0.35 * Math.sin(pulse * 7) : 0.9;
+      ctx.strokeStyle = P.cars[c]![0]!;
+      ctx.lineWidth = w;
+      ctx.stroke();
+      if (groundRing(ctx, d, x, z, f.HOME_R * 0.62, 0.06)) (ctx.lineWidth = w * 0.5), ctx.setLineDash([w * 1.5, w * 1.5]), ctx.stroke(), ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+  }
+  /** BATTLE over everything: bolts (lit streaks), shields (a ring round the car), the blasts. */
+  function paintBattle(ctx: CanvasRenderingContext2D, v: View) {
+    const d = v.d, f = d.focal(), it = sim.items, BO = it.BO;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    for (let k = 0; k < NBOLT; k++) {
+      const o = k * BOK;
+      if (!BO[o + 7]) continue;
+      const x = BO[o]!, y = BO[o + 1]!, z = BO[o + 2]!;
+      if (!d.project(x, y, z, tmp) || tmp[2]! < 0.5 || !d.project(x - BO[o + 3]! * 0.05, y, z - BO[o + 4]! * 0.05, tmp2)) continue;
+      const w = Math.max(2, (f * 0.16) / tmp[2]!);
+      for (let pass = 0; pass < 2; pass++) {
+        ctx.strokeStyle = pass ? P.check : P.cars[BO[o + 6]!]![0]!;
+        ctx.globalAlpha = pass ? 1 : 0.5;
+        ctx.lineWidth = pass ? w * 0.4 : w * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(tmp2[0]!, tmp2[1]!);
+        ctx.lineTo(tmp[0]!, tmp[1]!);
+        ctx.stroke();
+      }
+    }
+    for (let c = 0; c < sim.count; c++) {
+      if (!(it.shield(c) > 0)) continue;
+      const p = c * 3;
+      if (!d.project(sim.pos[p]!, sim.pos[p + 1]! + 0.25, sim.pos[p + 2]!, tmp) || tmp[2]! < 0.5) continue;
+      const r = (f * 1.35) / tmp[2]!;
+      ctx.strokeStyle = P.tip;
+      ctx.lineWidth = Math.max(1.5, r * 0.08);
+      ctx.globalAlpha = 0.45 + (reduced ? 0 : 0.25 * Math.sin(pulse * 9 + c));
+      ctx.beginPath();
+      ctx.ellipse(tmp[0]!, tmp[1]!, r, r * 0.7, 0, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = P.tip;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+  /** A blast (@fzlt/core/fx, in screen space) on every view that sees world point (x, y, z). */
+  function blast(x: number, y: number, z: number, power: number) {
+    if (reduced) return;
+    for (let i = 0; i < NV; i++) {
+      const v = views[i]!;
+      if (!v.d.project(x, y, z, tmp) || tmp[2]! < 0.5 || tmp[2]! > 90) continue;
+      const s = Math.max(0.35, Math.min(1.6, v.d.focal() / tmp[2]! / 28));
+      v.fx.blast(tmp[0]!, tmp[1]!, power * s);
+      v.FXA[0] = x; v.FXA[1] = y; v.FXA[2] = z; v.FXA[3] = tmp[0]!; v.FXA[4] = tmp[1]!;
+    }
+  }
+  /** A view's blasts, pinned to where they went off as the camera moves. */
+  function paintFx(ctx: CanvasRenderingContext2D, v: View) {
+    if (!v.fx.live) return;
+    const A = v.FXA, ok = v.d.project(A[0]!, A[1]!, A[2]!, tmp) && tmp[2]! > 0.5;
+    ctx.save();
+    if (ok) ctx.translate(tmp[0]! - A[3]!, tmp[1]! - A[4]!);
+    v.fx.draw(ctx, !P.night);
+    ctx.restore();
   }
   /** A car's tail-light trail: two lines, fading toward the tail end. */
   function paintTrail(ctx: CanvasRenderingContext2D, v: View, k: number) {
@@ -1344,6 +1563,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         }
       }
     }
+    if (sim.battle) paintBattle(ctx, v);
+    paintFx(ctx, v);
+    // King of the Table: a tag over each home pad.
+    if (!race && fs().king)
+      for (let k = 0; k < sim.count; k++) {
+        const f = fs();
+        if (!d.project(f.HOME[k * 2]!, PARK_TOP + 1.4, f.HOME[k * 2 + 1]!, tmp) || tmp[2]! < 2 || tmp[2]! > (view ? 70 : 400)) continue;
+        sticker(ctx, tmp[0]!, tmp[1]!, LBL[k] + " HOME", P.cars[k]![0]!, P.ink, Math.max(0.65, Math.min(1.05, d.focal() / tmp[2]! / 30)));
+      }
     if (mode !== "demo") minimap(ctx, v);
   }
   /** The minimap: the loop and its branches, the gates to come (or the park's tables), every buggy (yours ringed). */
@@ -1392,6 +1620,16 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         ctx.lineWidth = 2.5;
         ctx.strokeRect(x0 + (tb.cx - TX + HX) * s, y0 + (tb.cz - TZ + HZ) * s, TX * 2 * s, TZ * 2 * s);
       });
+    // King of the Table: the home pads, a ring each in its player's colour.
+    if (!race && fs().king)
+      for (let k = 0; k < sim.count; k++) {
+        const f = fs();
+        ctx.strokeStyle = P.cars[k]![0]!;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x0 + (f.HOME[k * 2]! + HX) * s, y0 + (f.HOME[k * 2 + 1]! + HZ) * s, Math.max(4, f.HOME_R * s), 0, TAU);
+        ctx.stroke();
+      }
     for (let k = sim.count - 1; k >= 0; k--) {
       const x = x0 + (sim.pos[k * 3]! + HX) * s, y = y0 + (sim.pos[k * 3 + 2]! + HZ) * s;
       ctx.fillStyle = P.cars[k]![0]!;
@@ -1407,7 +1645,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   // ---- input: keys (one or two people), the pointer, gamepads ----
   /** Gamepads seen (polled only once one has connected). */
   let pads = false;
-  const GP = new Float64Array(2 * 5);
+  const GP = new Float64Array(2 * 6);
   addEventListener("gamepadconnected", () => ((pads = true), engine.wake()), sig);
   function pollPads() {
     GP.fill(0);
@@ -1417,19 +1655,20 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     for (let i = 0; i < list.length && p < 2; i++) {
       const g = list[i];
       if (!g || !g.connected) continue;
-      const b = (n: number) => (g.buttons[n] ? g.buttons[n]!.value || (g.buttons[n]!.pressed ? 1 : 0) : 0), ax = g.axes[0] ?? 0, q = p * 5;
+      const b = (n: number) => (g.buttons[n] ? g.buttons[n]!.value || (g.buttons[n]!.pressed ? 1 : 0) : 0), ax = g.axes[0] ?? 0, q = p * 6;
       GP[q] = Math.max(b(7), b(12));
       GP[q + 1] = Math.max(b(6), b(13));
       GP[q + 2] = Math.abs(ax) > 0.15 ? ax : b(15) - b(14);
       GP[q + 3] = b(0) || b(3) ? 1 : 0;
       GP[q + 4] = Math.max(b(1), b(2), b(5));
-      if (GP[q]! + GP[q + 1]! + Math.abs(GP[q + 2]!) + GP[q + 3]! + GP[q + 4]! > 0.05) (moved = true), mode === "demo" && takeOver();
+      GP[q + 5] = b(4);
+      if (GP[q]! + GP[q + 1]! + Math.abs(GP[q + 2]!) + GP[q + 3]! + GP[q + 4]! + GP[q + 5]! > 0.05) (moved = true), mode === "demo" && takeOver();
       p++;
     }
   }
   /** Person p's inputs into I (keys or pad, the pointer for P1 alone, a gamepad). */
   function readInput(p: number) {
-    const cc = ctl(p), q = p * 5, alone = NV === 1;
+    const cc = ctl(p), q = p * 6, alone = NV === 1;
     // The touch stick (pad): x steers (through axis), up is gas and down the brake, both analog.
     const sy = cc.stick.active ? cc.stick.y : 0;
     I[0] = Math.max(cc.down(GAS) || (alone && PD[0]) ? 1 : 0, GP[q]!, -sy);
@@ -1438,7 +1677,8 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     I[2] = Math.max(-1, Math.min(1, st + GP[q + 2]!));
     I[3] = cc.down(NITRO) || GP[q + 3] ? 1 : 0;
     I[4] = Math.max(cc.down(DRIFT) ? 1 : 0, GP[q + 4]!);
-    if (I[0] || I[1] || I[2] || I[3] || I[4]) moved = true;
+    I[5] = cc.down(ITEM) || GP[q + 5] ? 1 : 0;
+    if (I[0] || I[1] || I[2] || I[3] || I[4] || I[5]) moved = true;
   }
 
   // ---- online: the room, the lockstep link, rematch, leaving ----
@@ -1455,7 +1695,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     readyBits: 0,
     /** Seats seen leaving (bits): each gets a toast once. */
     leftSeen: 0,
-    pick: { mode: "race" as "race" | "free", track: 0, rivals: 0, laps: 0 },
+    pick: { mode: "race" as "race" | "free", track: 0, rivals: 0, laps: 0, battle: false },
     link: null as Lockstep | null,
     abort: null as AbortController | null,
     room: Math.min(ROOM_N - 1, Math.max(0, Number(qs.get("room")) | 0)),
@@ -1480,7 +1720,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       net.readyBits = net.leftSeen = net.sent = 0;
       net.names = NONE.slice();
       net.go = null;
-      net.pick = { mode: m.free ? "free" : "race", track: m.track, rivals: m.rivals, laps: m.laps };
+      net.pick = { mode: m.free ? "free" : "race", track: m.track, rivals: m.rivals, laps: m.laps, battle: m.battle };
       want.laps = m.laps;
       want.humans = -1;
       auto = false;
@@ -1491,7 +1731,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
           if (paused || !result.hidden || mode !== "race") readNone();
           else pollPads(), readInput(0);
           const nm = net.sent < NAME ? nameBits(myName, net.sent++) : 0;
-          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0) | nm);
+          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0) | (I[5] ? B_ITEM : 0) | nm);
         },
         step: (inputs, f) => {
           let rb = 0;
@@ -1684,7 +1924,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     $(".dh-go").hidden = true;
     seatsEl.innerHTML = "";
     net.abort = new AbortController();
-    const signal = net.abort.signal, mine = packMode(pick.mode === "free", Math.max(0, TRACKS.indexOf(def)), pick.rivals, Math.min(7, o.laps ?? 0));
+    const signal = net.abort.signal, mine = packMode(pick.mode === "free", Math.max(0, TRACKS.indexOf(def)), pick.rivals, Math.min(7, o.laps ?? 0), pick.battle);
     for (let tries = 0; ; tries++) {
       $(".dh-t-room").textContent = "" + net.room;
       const one = new AbortController(), stop = () => one.abort();
@@ -1821,6 +2061,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         if (sim.n) events(), (moving = true);
       }
       if (!paused || net.on) if (stepFx(dt)) moving = true;
+      for (let i = 0; i < NV; i++) if (views[i]!.fx.live) views[i]!.fx.step(dt), (moving = true);
       for (let i = 0; i < NV; i++) {
         const v = views[i]!;
         if (stepCam(v, dt)) moving = true;
@@ -1856,9 +2097,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   });
 
   // ---- keys ----
-  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", KeyQ: "nitro", Enter: "nitro", ShiftLeft: "drift", ShiftRight: "drift" };
+  const MAP_K: Record<string, string> = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "gas", KeyW: "gas", ArrowDown: "brake", KeyS: "brake", Space: "nitro", KeyQ: "nitro", Enter: "nitro", ShiftLeft: "drift", ShiftRight: "drift", KeyF: "item", KeyE: "item", ControlRight: "item", Period: "item", Numpad0: "item" };
   /** Two on one screen: which person a key is for (1: P2; the rest P1). */
-  const P2_KEYS: Record<string, number> = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, ShiftRight: 1, Enter: 1, NumpadEnter: 1, Slash: 1 };
+  const P2_KEYS: Record<string, number> = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, ShiftRight: 1, Enter: 1, NumpadEnter: 1, Slash: 1, ControlRight: 1, Period: 1, Numpad0: 1 };
   const MAP_P2: Record<string, string> = { NumpadEnter: "nitro", Slash: "nitro" };
   const keyMode = o.keyboard ?? (dropIn ? "page" : "focus");
   const keyHost: EventTarget = keyMode === "page" ? window : stage;
@@ -1868,7 +2109,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const keyOf = (code: string) => MAP_K[code] ?? (NV > 1 ? MAP_P2[code] : undefined);
   keyHost.addEventListener("keydown", (ev) => {
     const e = ev as KeyboardEvent;
-    if (e.metaKey || e.ctrlKey || e.altKey || !mine(e) || destroyed) return;
+    if (e.metaKey || (e.ctrlKey && e.code !== "ControlRight") || e.altKey || !mine(e) || destroyed) return;
     const code = e.code;
     if (code === "Escape") {
       e.preventDefault();
@@ -1923,14 +2164,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     for (const b of s.querySelectorAll<HTMLButtonElement>("button"))
       b.addEventListener("click", () => {
         if (s.dataset.seg === "mode") pick.mode = b.dataset.v === "free" ? "free" : "race";
+        else if (s.dataset.seg === "set") pick.battle = b.dataset.v === "battle";
         else pick.players = b.dataset.v === "2" ? "2" : b.dataset.v === "net" ? "net" : "1";
-        store.set("menu", JSON.stringify({ mode: pick.mode, players: pick.players === "net" ? "1" : pick.players, rivals: pick.rivals }));
+        saveMenu();
         setup(pick.mode, 1, 3, def.id);
         menuWrite();
         dirty = true;
         engine.wake();
       }, sig);
-  $(".dh-rivk").addEventListener("click", () => ((pick.rivals = pick.rivals ? 0 : 3), store.set("menu", JSON.stringify({ mode: pick.mode, players: pick.players === "net" ? "1" : pick.players, rivals: pick.rivals })), menuWrite()), sig);
+  $(".dh-rivk").addEventListener("click", () => ((pick.rivals = pick.rivals ? 0 : 3), saveMenu(), menuWrite()), sig);
   $(".dh-start").addEventListener("click", () => (pick.players === "net" ? openRoom() : startRace(def.id)), sig);
   paintPad();
   $(".dh-restart").addEventListener("click", () => startRace(def.id), sig);
@@ -1961,7 +2203,8 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       return sim.kind === "free" ? "freestyle" : def.id;
     },
     /** Race now (a track id, else the current one); `opts` sets the mode and the people first. */
-    start(id?: string, opts: { mode?: "race" | "free"; players?: 1 | 2; rivals?: number } = {}) {
+    start(id?: string, opts: { mode?: "race" | "free"; players?: 1 | 2; rivals?: number; battle?: boolean } = {}) {
+      if (opts.battle !== undefined) pick.battle = opts.battle;
       if (opts.mode) pick.mode = opts.mode;
       else if (id) pick.mode = "race";
       if (opts.players) pick.players = opts.players === 2 ? "2" : "1";
@@ -2012,6 +2255,8 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         net: net.link ? { frame: net.link.link.frame, desync: net.link.link.desync, stalls: net.link.link.stalls, lost: net.link.link.lost, left: net.link.left, players: net.players, names: net.names.slice(0, net.players) } : null,
         player: { x: sim.pos[me * 3]! * 20, y: sim.pos[me * 3 + 2]! * 20, angle: v.yaw },
         aim: isRace() ? aim() : null,
+        battle: sim.battle ? { seen: { ...seen }, held: Array.from({ length: sim.count }, (_, c) => sim.items.held(c)), shield: Array.from({ length: sim.count }, (_, c) => sim.items.shield(c) > 0), spin: Array.from({ length: sim.count }, (_, c) => C[c * K + 24]! > 0), stall: Array.from({ length: sim.count }, (_, c) => C[c * K + STALL]! > 0), fx: views.map((v) => v.fx.live) } : null,
+        king: !isRace() && fs().king ? { carry: Array.from({ length: sim.count }, (_, c) => C[c * K + KPOT]!), banked: fs().scs.map((s) => s.S[SC]!), seen: { ...seen } } : null,
       };
     },
     /** Your buggy's screen point (CSS px from the canvas's top left), as of the last draw. */

@@ -25,14 +25,25 @@ Pick a track (the preview shows it), then START. Your best time per track is kep
 with a waypoint pilot: they look ahead along the line, brake for the bends, level the nose in the
 air, and pick the shortcut or the long way each lap. They see the other cars: they brake behind one
 they can't pass and step round it, and RUST leans on anyone in reach. Cars collide; hit a car while it
-drifts and it spins out. They crash too.
+drifts and it spins out. They tumble too.
 
 **Stunts:** every landing is judged by its airtime and how far off the slope it came down. Clean
-landings score and build a combo; sketchy ones score once; nose it in or roll it and you tumble back
-to the last gate. **Drift** (Shift, or DRIFT on a phone): the handbrake steps the tail out; hold the
+landings score and build a combo; sketchy ones score once; nose it in or roll it and you **tumble**:
+a short roll, then the buggy rights itself and drives on from where it came down (you lose the combo,
+never the run). Only a car that flies off the table's edge goes back to the last gate. **Drift** (Shift, or DRIFT on a phone): the handbrake steps the tail out; hold the
 slide and the drift points bank when it straightens, or are lost to a hit or a crash. Clean landings
 and drifts fill **NITRO**; pink **boost pads**, on straights out of the hairpins and into the
 kickers, shove anyone over them.
+
+**BATTLE** (CLEAN / BATTLE on the menu, kept on the device): item boxes on the track (four rows of
+three, back a few seconds after they're taken). Drive through one to hold an item; fire it with
+**ITEM** (F, E or right Ctrl; P2 in a split: right Ctrl, `.` or numpad 0; ★ on a phone's pad; a
+gamepad's left bumper). Our own four: the **blaster** (a burst of three bolts ahead: a hit stalls
+the car), the **oil slick** (dropped behind: the next car over it spins out), the **zap mine** (left
+on the track, armed after a moment: anyone over it, you too, is thrown into a big tumble that rights
+itself) and the **shield** (blocks the next hit). Hits are for fun: no health, nobody is ever out.
+The draw leans a little toward the back of the pack (more mines and blasters there, more shields up
+front), the rivals pick up and fire theirs too, and every hit goes off in `@fzlt/core/fx`'s blasts.
 
 **Freestyle** (RACE / FREESTYLE on the menu): no race and no clock. Four large tables side by side
 over a dark gap, each its own look and features: **Salt Flats** (a kicker line, a tabletop, whoops,
@@ -43,19 +54,25 @@ you facing its out-ramp with a boost pad on the way (gas straight on, and you're
 Air, transfers (+250) and drift chains score, each times the combo multiplier: every scoring move
 inside five seconds of the last adds one (up to ×10); a crash or a sketchy landing loses it. Drive
 into the gap and the table you were on takes you back. The best score is kept on the device. Left
-alone, it settles (no frames) like the menu.
+alone, it settles (no frames) like the menu. With BATTLE on, every table has item boxes too.
+
+**King of the Table** (Freestyle with two or more, split or online): each player has a glowing home
+pad, the centre of their own table, and starts on it. Points you score are carried (the CARRY chip)
+and only count once you bring them home: they bank when you're back on your pad. Land on someone
+else's pad and you steal a fifth of their banked points (carried: get them home); a tumble or a hit
+spills a quarter of what you carry. The most banked when the three-minute jam ends wins.
 
 **Two players.** *Split screen* (2 · SPLIT): a view each, side by side on a wide screen, stacked on
 a tall one; P1 on W A S D, left Shift drift, Space (or Q) nitro; P2 on the arrows, right Shift drift,
-Enter (or /) nitro; the first gamepad is P1, the second P2 (right trigger gas, left trigger brake,
-left stick steer, A boost, B drift); on a touch screen each half has its own steer pad and keys.
+Enter (or /) nitro, right Ctrl item; the first gamepad is P1, the second P2 (right trigger gas, left trigger brake,
+left stick steer, A boost, B drift, left bumper item); on a touch screen each half has its own steer pad and keys.
 *Online* (ONLINE): two to four phones (or screens) over a fizlet-rooms room, each with its own
 view. HOST opens a room (pick 2, 3 or 4 players): the card shows the room number and the invite
 code in big type, and SEND LINK opens the phone's share sheet (or copies the link): the link has the
 room and the code, so it drops a friend straight into the room after the code check. JOIN takes the
 room number by hand. Every player can type a name (kept on the device); the seats show in their
 buggies' colours. The room starts when the host's count is in, or on START NOW with two or more; the
-host's mode, track and rivals ride along (with AI rivals on, they fill the grid to six). The sim runs
+host's mode, track, rivals and CLEAN / BATTLE ride along (with AI rivals on, they fill the grid to six). The sim runs
 in lockstep on every screen and only inputs travel (`@fzlt/core/presence`: 32 bits per seat per frame,
 sent two frames ahead; a state hash every 30 frames catches a desync). A race, or a three-minute
 Freestyle jam for up to four (the top score wins); REMATCH on every screen starts the next on the same
@@ -65,11 +82,11 @@ allows (its `MAX_PLAYERS`, at most four here).
 
 **Controls.** ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro; in the air gas
 lifts the nose and brake dips it. P pause, V camera (chase or the whole table), M sound, R restart,
-T menu. A mouse: hold the course for gas, drag to steer. Phones: GAS, BRAKE, DRIFT and BOOST under
-the right thumb; the left thumb steers on a ◀ ▶ pad or a stick (STEERING on the pause card; the
+T menu, F item (BATTLE). A mouse: hold the course for gas, drag to steer. Phones: GAS, BRAKE, DRIFT
+and BOOST (and ★ ITEM in BATTLE) under the right thumb; the left thumb steers on a ◀ ▶ pad or a stick (STEERING on the pause card; the
 choice is kept on the device). The look follows the page's `<html data-theme>`.
 
-The race is deterministic and seeded: the same seed and inputs give the same race, bit for bit
+The race is deterministic and seeded (items, boxes and hits too): the same seed and inputs give the same race, bit for bit
 (the course uses only + − × ÷ and square roots): that is what makes online play work.
 
 ## As a module
@@ -79,6 +96,7 @@ import { createDuneHop } from "./dist/dune-hop.mjs";
 const game = createDuneHop({ host: document.querySelector("#stage") }); // the track menu
 game.start("neon-edge");                       // or race at once
 game.start(undefined, { mode: "free" });       // Freestyle; { players: 2 } splits the screen
+game.start("ridge-run", { battle: true });     // BATTLE: item boxes on the track
 createDuneHop({ host, rooms: "wss://…" });     // the fizlet-rooms server for ONLINE (?rooms= overrides)
 createDuneHop({ host, attract: true, track: "neon-edge" }); // a demo lap; a tap takes the wheel
 createDuneHop();                               // a layer over the whole page; Escape gives it back
@@ -86,7 +104,7 @@ createDuneHop();                               // a layer over the whole page; E
 
 ## Size
 
-The whole game, its Fizlet bricks (kernel, diorama, terrain, drive, input, pad, sound, ui, presence)
+The whole game, its Fizlet bricks (kernel, diorama, terrain, drive, input, pad, sound, fx, ui, presence)
 and the Board UI styles: `dist/build.json` holds the measured gzip size of each build (`npm run
 size` checks it against the budget). No runtime dependencies: `@fzlt/core` is a dev dependency,
 bundled at build.
@@ -98,19 +116,23 @@ npm ci
 npm run check         # typecheck, build dist/ (committed), size
 npm test              # headless: tracks, a full race on every track, Freestyle (every table-to-table
                       # jump, scoring, the gap, the jam), lockstep sync (presence syncCheck, a desync
-                      # caught), determinism, allocation
+                      # caught; BATTLE races and King of the Table for 2 and 4), determinism,
+                      # allocation; BATTLE (every item, every hit recovers, the shield, the draw,
+                      # King of the Table) and no crash-out on any landing
 npm run test:settle   # the menu and the hero sleep, the race never does, off screen pauses, Recall
 npm run test:browser  # Chromium at 1440 and 390: keyboard, mouse, touch, pause, a full race, Freestyle,
-                      # split screen, Recall; then tests/online.mjs: four pages (two at 1440, two
+                      # split screen, Recall; tests/battle.mjs: BATTLE (pick up and fire with keys
+                      # and touch, hits, the shield, a mine's tumble) and King of the Table; then tests/online.mjs: four pages (two at 1440, two
                       # phones) race online against a stand-in room server (tests/room-server.mjs):
-                      # host, link, join by number, names, a leaver, rematch
+                      # host (BATTLE on), link, join by number, names, a leaver, rematch; a King of
+                      # the Table jam in lockstep
 npm run site:build    # the site (landing + /play/) into artifacts/pages
 npm run test:site     # the site at 1440 and 390, light and dark
 node scripts/shots.mjs  # the hero's still poster and the share image, from the game
 ```
 
 `src/tracks.ts` (the tracks as data and the course builder), `src/race.ts` (the race: cars, gates,
-laps, rivals, boost, crashes), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
+laps, rivals, boost), `src/tumble.ts` (the tumble that rights itself), `src/items.ts` (BATTLE), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
 session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room, lockstep that survives a leaver),
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.

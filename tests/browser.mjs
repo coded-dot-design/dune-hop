@@ -68,10 +68,10 @@ try {
       // keys in a cluster under the right one (GAS the big one, in the corner).
       const keysOf = () => p.evaluate(() => {
         const root = document.querySelector("[data-fizlet-host]").shadowRoot, pad = root.querySelector(".bui-pad"), r = (e) => e.getBoundingClientRect(), st = pad.querySelector(".bui-stick");
-        const keys = [...pad.querySelectorAll(".bui-pad-keys button")], kr = keys.map(r), sr = r(pad.querySelector(".bui-pad-move"));
+        const keys = [...pad.querySelectorAll(".bui-pad-keys button")].filter((b) => b.offsetParent), kr = keys.map(r), sr = r(pad.querySelector(".bui-pad-move"));
         const hit = (a, b) => Math.hypot(a.x + a.width / 2 - b.x - b.width / 2, a.y + a.height / 2 - b.y - b.height / 2) < (a.width + b.width) / 2;
         const clear = kr.every((a, i) => kr.every((b, j) => i === j || !hit(a, b)) && a.left >= sr.right && a.right <= innerWidth);
-        const moves = [...pad.querySelectorAll(".bui-pad-move button")].map((b) => b.getAttribute("aria-label")), big = [...pad.querySelectorAll("button, .bui-stick")].every((b) => Math.min(r(b).width, r(b).height) >= 44);
+        const moves = [...pad.querySelectorAll(".bui-pad-move button")].map((b) => b.getAttribute("aria-label")), big = [...pad.querySelectorAll("button, .bui-stick")].filter((b) => b.offsetParent).every((b) => Math.min(r(b).width, r(b).height) >= 44);
         return { moves, stick: !!st, acts: keys.map((b) => b.title), icons: keys.every((b) => b.querySelector("svg") && !b.querySelector("small") && b.getAttribute("aria-label")), gasCorner: kr[0].right === Math.max(...kr.map((k) => k.right)) && kr[0].bottom === Math.max(...kr.map((k) => k.bottom)) && kr[0].width > kr[1].width, clear, big, h: Math.round(r(pad).height), top: Math.round(r(pad).top), padk: root.querySelector(".dh-padk").textContent };
       });
       const stickPad = await keysOf();

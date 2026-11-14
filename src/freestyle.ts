@@ -4,7 +4,12 @@
 // transfer bonus for landing on another table, drift chains (a handbrake slide banked when it ends,
 // ./handling.ts), each times the combo multiplier: every scoring move inside the combo window adds
 // one to it (up to ×10); the window running out ends the combo, a crash or a sketchy landing loses
-// it. A drive into the gap or a rollover tumbles you back to your table's start.
+// it. A bad landing or a rollover is a tumble: the buggy rights itself and drives on (./tumble.ts); only
+// a drive into the gap (or off the park) puts you back at your table's start. BATTLE puts item boxes
+// on every table (./items.ts). With two or more people it is King of the Table: each has a glowing
+// home pad (the centre of their own table); points scored are carried, and bank only when you get back
+// onto your pad; a landing on someone else's pad steals a fifth of their banked points (carried: take
+// them home); a tumble or a hit spills a quarter of what you carry. The most banked when the jam ends wins.
 // Deterministic like the race: the seed, the inputs and the fixed step decide everything; a step
 // allocates nothing (typed arrays only).
 import { drive, type Drive } from "@fzlt/core/drive";
@@ -15,28 +20,38 @@ import { sincos, SC as TRIG } from "./math.ts";
 import { buildPark, TOP as TABLE_TOP, type Park } from "./park.ts";
 import {
   K, IK, COUNT, RUN, DONE, DRIVE, CRASH, FIN, CAR_OPTS,
-  PH, CT, BOOST, PP, PAIR, CRASHES, PARK, SPIN, SPINR, DPTS, DTIME, DTOTAL, HUMAN,
+  PH, CT, BOOST, PP, PAIR, CRASHES, PARK, SPIN, SPINR, DPTS, DTIME, DTOTAL, HUMAN, STALL, EDGE, TLEN, KPOT, KSTEAL, KVICT,
   E_GO, E_COUNT, E_LAND, E_CRASH, E_RESPAWN, E_BOOST, E_AIR, E_BUMP, E_DONE, E_NITRO, E_DRIFT, E_DRIFT_LOST, E_SPIN,
+  E_RIGHT, E_ITEM, E_FIRE, E_HIT, E_BLOCK, E_BANK, E_STEAL, E_SPILL,
 } from "./race.ts";
+import { tumbler, OVER, RIGHTED } from "./tumble.ts";
+import { items, H_STALL, H_SPIN, H_TUMBLE } from "./items.ts";
 
 /** Freestyle events (on top of the race's): a transfer to another table (value: the table), a combo's end (value: its size). */
 export const E_XFER = 18, E_COMBO = 19;
 /** Per car (on top of the race's slots): the table it is on, the one it took off from, the route
  *  point (autopilot), the combo window left, transfers, the last transfer's points. */
 export const TABLE = 1, FROM = 2, WP = 3, CWIN = 5, XFERS = 7, XPTS = 14;
-const TUMBLE = 1.3, COUNTDOWN = 3, BOOST_T = 0.9, BOOST_A = 12, BOOST_TOP = 15, NITRO_BURN = 0.45, WALL = 2.4, SPIN_T = 1.1;
+const COUNTDOWN = 3, BOOST_T = 0.9, BOOST_A = 12, BOOST_TOP = 15, NITRO_BURN = 0.45, WALL = 2.4, SPIN_T = 1.1;
 const COMBO_T = 5, COMBO_MAX = 9, XFER_PTS = 250, FIXED = 1 / 60;
+/** King of the Table: the home pad's radius, the share a steal takes, the share a spill loses, a
+ *  steal's cool-down (s). */
+export const HOME_R = 3.6, STEAL = 0.2, SPILL = 0.25, STEAL_T = 6;
 
 export interface FreestyleOptions {
   /** People (1 to 4: two on a split screen, up to four online). */
   humans?: number;
   /** A timed jam, seconds (0: none; the default is 0 for one person, 180 for two). */
   jam?: number;
+  /** BATTLE: item boxes on the tables (default off). */
+  battle?: boolean;
+  /** King of the Table: home pads, banking and steals (default: on with two people or more). */
+  king?: boolean;
 }
 
 export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   const park: Park = buildPark(), t = park.t, tables = park.tables;
-  const HUM = Math.max(1, Math.min(4, fo.humans ?? 1)), NC = HUM, JAM = fo.jam ?? (HUM > 1 ? 180 : 0);
+  const HUM = Math.max(1, Math.min(4, fo.humans ?? 1)), NC = HUM, JAM = fo.jam ?? (HUM > 1 ? 180 : 0), KING = fo.king ?? HUM > 1, BATTLE = !!fo.battle;
   const cars: Drive[] = [];
   for (let c = 0; c < NC; c++) cars.push(drive(t, { ...CAR_OPTS, surfaces: [0.92, 1.08, 1.02, 1.1, 1.1, 0.9, 1.12], id: c }));
   const DS = cars.map((v) => new Float64Array(v.landing.buffer));
@@ -45,19 +60,35 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   const R = new Float64Array(9);
   const IN = new Float64Array(NC * IK), AUTO = new Uint8Array(NC), ON = new Uint8Array(NC);
   const hd = handling(cars, DS);
-  const pos = new Float64Array(NC * 3), rot = new Float64Array(NC * 3), TV = new Float64Array(NC * 6);
+  const pos = new Float64Array(NC * 3), rot = new Float64Array(NC * 3);
   const scs: Stunt[] = [];
   for (let c = 0; c < NC; c++) scs.push(stunt());
   const N = new Float64Array(NC * 2), ev = new Float64Array(72), DT = new Float64Array(1), AI = new Float64Array(4);
   let nev = 0;
   const emit = (type: number, car: number, val: number) => nev < 24 && ((ev[nev * 3] = type), (ev[nev * 3 + 1] = car), (ev[nev * 3 + 2] = val), nev++);
+  const tb = tumbler({ C, K, ct: CT, edge: EDGE, len: TLEN, pos, rot, cars, ground: (x, z) => (park.tableAt(x, z) >= 0 ? t.height(x, z) : -30) });
+  const TV = tb.TV;
+  /** King of the Table: each person's home pad [x, z] (the centre of their own table). */
+  const HOME = new Float64Array(NC * 2);
+  for (let c = 0; c < NC; c++) (HOME[c * 2] = tables[c % 4]!.spawn[0]), (HOME[c * 2 + 1] = tables[c % 4]!.spawn[1]);
+  // BATTLE: on every table a row of three boxes on the run-up to its out-ramp (past the boost pad) and
+  // one behind its centre.
+  const BOXP: number[] = [];
+  if (BATTLE)
+    for (const tbl of tables) {
+      const dx = (tbl.out[2] - tbl.out[0]) / 6.4, dz = (tbl.out[3] - tbl.out[1]) / 6.4;
+      for (const [x0, z0] of [[tbl.out[0] + dx * 2, tbl.out[1] + dz * 2], [tbl.cx - dx * 8, tbl.cz - dz * 8]] as const)
+        for (const s of [-2, 0, 2]) BOXP.push(x0 - dz * s, z0 + dx * s);
+    }
+  const it = items({ t, cars, DS, pos, HX: park.HX, HZ: park.HZ }, BOXP, seed, { get: E_ITEM, fire: E_FIRE, hit: E_HIT, block: E_BLOCK });
+  it.emit = emit;
 
   /** Car c to its table's start (more people side by side across it). */
   function place(c: number, ti: number) {
     const sp = tables[ti]!.spawn, v = cars[c]!, o = c * K;
     TRIG[2] = sp[2];
     sincos();
-    const side = NC > 2 ? (c - (NC - 1) / 2) * 1.8 : NC > 1 ? (c ? 1.8 : -1.8) : 0, fx = TRIG[1]!, fz = -TRIG[0]!;
+    const side = KING ? 0 : NC > 2 ? (c - (NC - 1) / 2) * 1.8 : NC > 1 ? (c ? 1.8 : -1.8) : 0, fx = TRIG[1]!, fz = -TRIG[0]!;
     v.reset(sp[0] - fz * side, sp[1] + fx * side, sp[2]);
     C[o + TABLE] = ti;
     C[o + FROM] = ti;
@@ -76,43 +107,91 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     IN.fill(0);
     for (const s of scs) s.reset();
     hd.reset();
+    tb.reset();
+    it.reset(seed);
     nev = 0;
-    // One person starts on the Salt Flats; more start side by side there too (a jam is one park).
-    for (let c = 0; c < NC; c++) (C[c * K + HUMAN] = 1), place(c, 0);
+    // One person starts on the Salt Flats; more start side by side there too (a jam is one park);
+    // King of the Table starts everyone on their own pad.
+    for (let c = 0; c < NC; c++) (C[c * K + HUMAN] = 1), place(c, KING ? c % 4 : 0);
   }
 
-  function crash(c: number, off: boolean) {
-    const o = c * K, v = cars[c]!;
+  /** A tumble (off 1: into the gap or off the park; big 1: a mine's): nobody is ever out. */
+  function crash(c: number, off: number, big = 0) {
+    const o = c * K;
     C[o + PH] = CRASH;
-    C[o + CT] = 0;
     C[o + CRASHES] = C[o + CRASHES]! + 1;
     C[o + BOOST] = 0;
     C[o + SPIN] = 0;
+    C[o + STALL] = 0;
     loseDrift(c);
     endCombo(c, true);
-    pos.set(v.pos, c * 3);
-    rot.set(v.rot, c * 3);
-    const T = c * 6;
-    TV[T] = v.vel[0]! * 0.7; TV[T + 1] = Math.max(3, v.vel[1]! + 4); TV[T + 2] = v.vel[2]! * 0.7;
-    TV[T + 3] = 7 + Math.abs(DS[c]![8]!) * 0.3; TV[T + 4] = 2.2; TV[T + 5] = (v.rot[2]! < 0 ? -1 : 1) * 5;
-    emit(E_CRASH, c, off ? 1 : 0);
+    spill(c);
+    const tl = tables[C[o + TABLE]!]!;
+    (tb.HOME[c * 2] = tl.cx), (tb.HOME[c * 2 + 1] = tl.cz);
+    tb.start(c, off, big);
+    emit(E_CRASH, c, off ? 1 : big ? 2 : 0);
   }
   function tumble(c: number, dt: number) {
-    const o = c * K, T = c * 6, p = c * 3;
-    C[o + CT] = C[o + CT]! + dt;
-    TV[T + 1] = TV[T + 1]! - 20 * dt;
-    for (let k = 0; k < 3; k++) (pos[p + k] = pos[p + k]! + TV[T + k]! * dt), (rot[p + k] = rot[p + k]! + TV[T + 3 + k]! * dt);
-    const g = t.height(pos[p]!, pos[p + 2]!) + 0.4;
-    if (pos[p + 1]! < g && park.tableAt(pos[p]!, pos[p + 2]!) >= 0) {
-      pos[p + 1] = g;
-      TV[T + 1] = Math.abs(TV[T + 1]!) * 0.38;
-      TV[T] = TV[T]! * 0.6; TV[T + 2] = TV[T + 2]! * 0.6;
-      TV[T + 3] = TV[T + 3]! * 0.55; TV[T + 4] = TV[T + 4]! * 0.5; TV[T + 5] = TV[T + 5]! * 0.55;
-    }
-    if (C[o + CT]! >= TUMBLE) {
+    const o = c * K, r = tb.step(c, dt === FIXED ? FIXED : dt);
+    if (r === RIGHTED) (C[o + PH] = R[0] === DONE ? FIN : DRIVE), emit(E_RIGHT, c, 0);
+    else if (r === OVER) {
       C[o + PH] = R[0] === DONE ? FIN : DRIVE;
       place(c, C[o + TABLE]!);
       emit(E_RESPAWN, c, C[o + TABLE]!);
+    }
+  }
+  /** King of the Table: a tumble or a hit spills a share of what car c carries. */
+  function spill(c: number) {
+    const o = c * K, lost = Math.round(C[o + KPOT]! * SPILL);
+    if (!KING || lost <= 0) return;
+    C[o + KPOT] = C[o + KPOT]! - lost;
+    emit(E_SPILL, c, lost);
+  }
+  /** Points car c scored: onto the score, or (King of the Table) carried until it banks them. */
+  function gain(c: number, pts: number) {
+    if (KING) C[c * K + KPOT] = C[c * K + KPOT]! + pts;
+    else scs[c]!.S[SC] = scs[c]!.S[SC]! + pts;
+  }
+  /** On its own pad: bank what it carries. On another's, just landed: steal a share of their bank. */
+  function king(c: number, landed: number) {
+    const o = c * K, x = pos[c * 3]!, z = pos[c * 3 + 2]!;
+    if (C[o + KSTEAL]! > 0) C[o + KSTEAL] = Math.max(0, C[o + KSTEAL]! - DT[0]!);
+    for (let d = 0; d < NC; d++) {
+      const dx = x - HOME[d * 2]!, dz = z - HOME[d * 2 + 1]!;
+      if (dx * dx + dz * dz > HOME_R * HOME_R) continue;
+      if (d === c) {
+        const pot = Math.round(C[o + KPOT]!);
+        if (pot > 0) (scs[c]!.S[SC] = scs[c]!.S[SC]! + pot), (C[o + KPOT] = 0), emit(E_BANK, c, pot);
+      } else if (landed && !(C[o + KSTEAL]! > 0)) {
+        const S = scs[d]!.S, take = Math.floor(S[SC]! * STEAL);
+        if (take <= 0) continue;
+        S[SC] = S[SC]! - take;
+        C[o + KPOT] = C[o + KPOT]! + take;
+        C[o + KSTEAL] = STEAL_T;
+        C[o + KVICT] = d;
+        emit(E_STEAL, c, take);
+      }
+    }
+  }
+  /** BATTLE: what each hit this step does (the items decided who was hit; a shield took its own). */
+  function hits() {
+    for (let c = 0; c < NC; c++) {
+      const k = it.HIT[c]!, o = c * K, v = cars[c]!;
+      if (!k || C[o + PH] !== DRIVE) continue;
+      if (k === H_TUMBLE) {
+        crash(c, 0, 1);
+        continue;
+      }
+      spill(c);
+      if (k === H_SPIN) spin(c, (c + it.BY[c]!) & 1 ? 1 : -1, 1);
+      else if (k === H_STALL) {
+        C[o + STALL] = 0.95;
+        C[o + BOOST] = 0;
+        v.vel[0] = v.vel[0]! * 0.42;
+        v.vel[2] = v.vel[2]! * 0.42;
+        if (DS[c]![6]! === 0) v.vel[1] = v.vel[1]! + 2.4;
+        loseDrift(c);
+      }
     }
   }
   function loseDrift(c: number) {
@@ -130,20 +209,20 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   /** A scoring move: points times the multiplier; the combo grows and its window restarts. Returns the points (in S[PTS]). */
   function score(c: number, base: number) {
     const S = scs[c]!.S, pts = Math.round(base) * (1 + S[CB]!);
-    S[SC] = S[SC]! + pts;
+    gain(c, pts);
     S[PTS] = pts;
     S[CB] = Math.min(COMBO_MAX, S[CB]! + 1);
     S[TOP] = Math.max(S[TOP]!, S[CB]!);
     C[c * K + CWIN] = COMBO_T;
   }
-  function spin(c: number, dir: number) {
+  function spin(c: number, dir: number, oil = 0) {
     const o = c * K;
-    if (C[o + PH] !== DRIVE || C[o + SPIN]! > 0) return;
-    C[o + SPIN] = SPIN_T;
+    if (C[o + PH] !== DRIVE || (C[o + SPIN]! > 0 && !oil)) return;
+    C[o + SPIN] = oil ? SPIN_T * 1.25 : SPIN_T;
     C[o + SPINR] = dir < 0 ? -7.5 : 7.5;
     C[o + BOOST] = 0;
     loseDrift(c);
-    emit(E_SPIN, c, 0);
+    if (!oil) emit(E_SPIN, c, 0);
   }
   function onHit(a: number, b: number, tail: number) {
     const j = hd.HIT[0]!;
@@ -187,9 +266,9 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     return out;
   }
 
-  function input(c: number, th: number, br: number, st: number, ni: number, dr = 0) {
+  function input(c: number, th: number, br: number, st: number, ni: number, dr = 0, item = 0) {
     const q = c * IK;
-    IN[q] = th; IN[q + 1] = br; IN[q + 2] = st; IN[q + 3] = ni; IN[q + 4] = dr;
+    IN[q] = th; IN[q + 1] = br; IN[q + 2] = st; IN[q + 3] = ni; IN[q + 4] = dr; IN[q + 5] = item;
   }
   /** Advance dt; true while anything moves (a jam's clock, a car, a combo's window). */
   function step(dt: number) {
@@ -230,6 +309,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
         C[o + SPIN] = Math.max(0, C[o + SPIN]! - dt);
         (a0 = 0), (a1 = 0.25), (a2 = 0), (a3 = 0), (a4 = 1);
       }
+      if (C[o + STALL]! > 0) (C[o + STALL] = Math.max(0, C[o + STALL]! - dt)), (a0 *= 0.15), (a3 = 0);
       v.input[0] = a0; v.input[1] = a1; v.input[2] = a2; v.input[3] = a4;
       const wasAir = DS[c]![6]!;
       if (v.step(dt === FIXED ? FIXED : dt)) moving = true;
@@ -273,12 +353,12 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
         else if (C[o + CWIN]! <= 0) C[o + CWIN] = 0.001;
       }
       if (v.crashed) {
-        crash(c, false);
+        crash(c, 0);
         continue;
       }
       // Into the gap (or over the park's edge): a crash, back to the table it was on.
       if ((ti < 0 && v.pos[1]! < TABLE_TOP - 0.7) || Math.abs(v.pos[0]!) > park.HX - 0.3 || Math.abs(v.pos[2]!) > park.HZ - 0.3) {
-        crash(c, true);
+        crash(c, 1);
         continue;
       }
       if (ti >= 0 && air === 0) {
@@ -297,7 +377,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
           else {
             const pts = Math.round(at * 50);
             endCombo(c, true);
-            S[SC] = S[SC]! + pts;
+            gain(c, pts);
             S[PTS] = pts;
           }
           N[c * 2] = Math.min(1, N[c * 2]! + (clean ? 0.14 + 0.04 * Math.min(4, S[CB]!) : 0.05));
@@ -313,6 +393,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
         }
       }
       driftScore(c);
+      if (KING && air === 0) king(c, wasAir > 0 && C[o + PAIR]! >= 0.3 ? 1 : 0);
       if (air === 0 && park.padAt(v.pos[0]!, v.pos[2]!) >= 0) {
         if (C[o + BOOST]! < BOOST_T - 0.2) emit(E_BOOST, c, 0);
         C[o + BOOST] = BOOST_T;
@@ -322,6 +403,17 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
       for (let c = 0; c < NC; c++) ON[c] = C[c * K + PH] === DRIVE ? 1 : 0;
       hd.contact(ON, onHit);
       for (let c = 0; c < NC; c++) pos.set(cars[c]!.pos, c * 3), rot.set(cars[c]!.rot, c * 3);
+    }
+    if (BATTLE && R[0] === RUN) {
+      // The draw's rubber band: by score, lowest gets the best (alone: the middle).
+      for (let c = 0; c < NC; c++) {
+        let below = 0;
+        for (let d = 0; d < NC; d++) if (scs[d]!.S[SC]! + C[d * K + KPOT]! > scs[c]!.S[SC]! + C[c * K + KPOT]!) below++;
+        (it.ON[c] = C[c * K + PH] === DRIVE ? 1 : 0), (it.BOT[c] = AUTO[c]!), (it.BACK[c] = NC > 1 ? below / (NC - 1) : 0.5);
+      }
+      it.IO[0] = dt;
+      if (it.step(IN, IK)) moving = true;
+      hits();
     }
     return moving || !resting();
   }
@@ -377,6 +469,8 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     def: park.def, park, t, HX: park.HX, HZ: park.HZ, cars, C, R, pos, rot, N, ev, IN, AUTO, DR: hd.DR, scs, sc: scs[0]!,
     count: NC,
     humans: HUM,
+    /** BATTLE (the items), King of the Table (the home pads [x, z] per person, their radius). */
+    battle: BATTLE, items: it, king: KING, HOME, HOME_R,
     /** The jam's length (0: none). */
     jam: JAM,
     name: (c: number) => (HUM > 1 ? "P" + (c + 1) : "YOU"),
@@ -389,7 +483,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     place,
     LIPS: park.LIPS, PADV: park.PADV, PAD_LEN: park.PAD_LEN, PAD_W: park.PAD_W,
     /** The whole state as bytes (the online desync check hashes it). */
-    bytes: [C, R, pos, rot, N, hd.DR, ...DS, ...scs.map((s) => s.S)].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
+    bytes: [C, R, pos, rot, TV, N, hd.DR, ...DS, ...scs.map((s) => s.S), ...it.bytes].map((a) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength)),
   };
 }
 export type Freestyle = ReturnType<typeof createFreestyle>;

@@ -10,21 +10,23 @@ const steps = [
   ['GAS & STEER', 'Hold ↑ (or W) for gas, ← → to steer, ↓ to brake. On a phone: GAS, BRAKE, DRIFT and BOOST on the right, steer on the left. A mouse? Hold the course for gas, drag to steer.'],
   ['FLY IT', 'Off a kicker, gas lifts the nose and the brake dips it. Land it flat: a clean landing scores the airtime and builds a combo.'],
   ['DRIFT & NITRO', 'Shift (or DRIFT) steps the tail out: hold the slide for drift points. Clean landings and drifts fill NITRO: hold Space (or BOOST) on a straight. Pink boost pads on the track give anyone a free shove.'],
-  ['TAKE THE FLAG', 'Every gate in order, three laps, three rivals. Nose in or roll it and you tumble back to the last gate. Your best time per track is kept.'],
+  ['TAKE THE FLAG', 'Every gate in order, three laps, three rivals. Nose in or roll it and you tumble, then the buggy rights itself and drives on: nobody crashes out. Your best time per track is kept.'],
+  ['BATTLE', 'Switch the menu to BATTLE for item boxes on the track: a blaster that stalls the car ahead, an oil slick, a zap mine, a shield. F (or ★ on a phone) fires. Hits spin you, stall you or throw you, never knock you out.'],
   ['FREESTYLE', 'No race, no clock: four big tables side by side, a launch ramp on every gap. Fly from table to table; air, transfers and drift chains score, and every move inside the combo window multiplies the next.'],
   ['TWO PLAYERS', 'Split screen on one device: P1 on W A S D, left Shift and Space; P2 on the arrows, right Shift and Enter; two gamepads; on a tablet each half gets its own pad. Or online, up to four phones: one hosts, SEND LINK, the others tap it.'],
 ];
 const features = [
   ['Four tabletop tracks', 'From a short sunset loop to a night run at the city\'s edge, each bigger and busier than the last.'],
   ['Split routes', 'Split Canyon and Neon Edge fork: the long way, or the shortcut over the gap. Pick each lap.'],
-  ['Rivals who race', 'VOLT, MIRAGE and RUST read the same line you do, brake for the bends, take shortcuts, step round other cars (or lean on them) and crash too.'],
+  ['Rivals who race', 'VOLT, MIRAGE and RUST read the same line you do, brake for the bends, take shortcuts, step round other cars (or lean on them), and in BATTLE pick up and fire items too.'],
   ['Jumps of every size', 'Kickers, gap jumps with a landing ramp, whoops, crests and banked turns, every lip marked.'],
   ['Night and day', 'Neon contour dunes at night, a hot sunset by day: it follows your light or dark theme.'],
   ['Freestyle park', 'Salt Flats, The Bowl, Dune Sea and Neon Yard: kickers, a bowl, a spine, dunes, ledges and a rail, each table its own look, linked by launch ramps.'],
+  ['King of the Table', 'Freestyle with friends: a glowing home pad each. Points only count once you bring them home, and a landing on someone else\'s pad steals a fifth of theirs.'],
   ['Two players', 'Split screen with a view each (side by side, or stacked on a tall screen), or online for up to four, a phone each: race or a three-minute Freestyle jam, then a rematch. Someone leaves? The AI drives on for them.'],
   ['Same seed, same race', 'The race is deterministic and seeded: online, only the inputs travel and every screen runs the same race, checked frame by frame.'],
 ];
-const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound', 'ui', 'presence'];
+const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound', 'fx', 'ui', 'presence'];
 ---
 <Base title="Dune Hop · an off-road racer on a tabletop" description={description}>
   <section class="dh-hero" aria-labelledby="dh-title">

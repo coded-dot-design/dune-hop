@@ -80,6 +80,8 @@
 .dh .dh-pad .bui-pad-keys>:nth-child(2){right:calc(var(--o) + var(--r));bottom:var(--o)}
 .dh .dh-pad .bui-pad-keys>:nth-child(3){right:calc(var(--o) + var(--r) * .7071);bottom:calc(var(--o) + var(--r) * .7071)}
 .dh .dh-pad .bui-pad-keys>:nth-child(4){right:var(--o);bottom:calc(var(--o) + var(--r))}
+.dh .dh-pad .bui-pad-keys>:nth-child(5){right:calc(var(--o) + var(--r) * 1.68);bottom:calc(var(--o) + var(--r) * .5)}
+.dh:not([data-battle]) .dh-pad .bui-pad-keys>:nth-child(5){display:none}
 .dh .dh-pad .bui-pad-keys svg{width:calc(28 * var(--u));height:calc(28 * var(--u));stroke-width:2.6}
 .dh .dh-pad .bui-pad-keys .bui-primary svg{width:calc(42 * var(--u));height:calc(42 * var(--u))}
 @media (pointer:coarse){.dh .dh-pad{display:flex}.dh .dh-hint{display:none}}
@@ -159,3 +161,13 @@
 @container stage (max-width:760px){.dh .dh-netchip[data-quiet]{display:none}}
 /* Freestyle on a narrow stage: the score stays (the time chip, the device's best, goes instead). */
 @container stage (max-width:760px){.dh[data-free] .dh-score{display:inline-flex}.dh[data-free][data-solo] .dh-time{display:none}}
+/* BATTLE: the item you hold (gold), your shield (cyan); King of the Table: what you carry home. */
+.dh .dh-item{background:var(--raised)}
+.dh .dh-item i{display:flex}
+.dh .dh-item svg{width:1.25em;height:1.25em;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.dh .dh-item.dh-has{background:#ffd166;color:#0b0a14;rotate:1.5deg}
+.dh .dh-item.dh-sh{background:#22e6ff;color:#0b0a14}
+.dh .dh-carry{background:#ff4fa8;color:#0b0a14;rotate:-1deg}
+.dh .dh-carry small{color:#0b0a14;opacity:.72}
+@container stage (max-width:760px){.dh .dh-carry small:last-child,.dh .dh-item:not(.dh-has):not(.dh-sh) span{display:none}}
+@media (prefers-reduced-motion:reduce){.dh .dh-item,.dh .dh-carry{rotate:0deg}}

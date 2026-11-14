@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { PerformanceObserver } from "node:perf_hooks";
 const { TRACKS, buildTrack, KIND_TRACK } = await import("../src/tracks.ts");
 const RC = await import("../src/race.ts");
-const { createRace, CARS, COUNT, RUN, DONE, E_GATE, E_LAP, E_CRASH, E_RESPAWN, E_BOOST, E_FINISH, E_DRIFT, E_SPIN } = RC;
+const { createRace, CARS, COUNT, RUN, DONE, E_GATE, E_LAP, E_CRASH, E_RESPAWN, E_BOOST, E_FINISH, E_DRIFT, E_SPIN, E_RIGHT } = RC;
 const K = RC.K;
 
 function run(r, steps, over) {
@@ -60,22 +60,24 @@ for (const def of TRACKS)
     assert.equal(new Set(r.order).size, CARS, "a finish order");
   });
 
-test("a nose-down landing crashes; back in at the last gate; boost pads push", () => {
+test("a nose-down landing tumbles and rights itself where it came down (no respawn); boost pads push", () => {
   const r = createRace(TRACKS[0], 3);
-  let crashed = null, boosted = false;
+  let at = null, boosted = false;
   const ev = run(r, 60 * 30, (r) => {
     const out = new Float64Array(4);
     r.pilot(0, out);
-    if (r.R[0] === RUN && r.cars[0].air > 0 && crashed === null) out[0] = 0, out[1] = 1; // brake in the air: nose down
+    if (r.R[0] === RUN && r.cars[0].air > 0 && at === null) out[0] = 0, out[1] = 1; // brake in the air: nose down
     return [out[0], out[1], out[2], 0, false];
   });
-  for (const e of ev) {
-    if (e[0] === E_CRASH && e[1] === 0 && crashed === null) crashed = r.C[2];
+  let crashAt = -1, rightAt = -1;
+  ev.forEach((e, i) => {
+    if (e[0] === E_CRASH && e[1] === 0 && crashAt < 0) crashAt = i;
+    if (e[0] === E_RIGHT && e[1] === 0 && rightAt < 0) rightAt = i;
     if (e[0] === E_BOOST && e[1] === 0) boosted = true;
-  }
-  assert.ok(ev.some((e) => e[0] === E_CRASH && e[1] === 0), "it crashed");
-  const back = ev.find((e) => e[0] === E_RESPAWN && e[1] === 0);
-  assert.ok(back, "and came back");
+  });
+  assert.ok(crashAt >= 0, "it tumbled");
+  assert.ok(rightAt > crashAt, "and came down on its wheels");
+  assert.ok(!ev.some((e) => e[0] === E_RESPAWN && e[1] === 0), "never put back at a gate");
   assert.ok(boosted, "a pad boosted it");
 });
 
