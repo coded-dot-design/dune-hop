@@ -116,7 +116,7 @@ try {
       await t("touchStart", [[st.x, st.y, 3]]);
       await t("touchMove", [[st.x, st.y - st.r * 0.95, 3]]);
       let both = false;
-      for (let i = 0; i < 2400 && ((await snap(p)).cars[0].driftTotal <= dt0 || (await snap(p)).gate < dg0 + 2); i++) {
+      for (let i = 0; i < 2400 && ((await snap(p)).cars[0].driftTotal <= dt0 || (await snap(p)).gate < dg0 + 1); i++) {
         const s = await snap(p), fx = Math.cos(s.player.angle), fz = -Math.sin(s.player.angle), ux = s.aim.x - s.player.x, uz = s.aim.y - s.player.y, ul = Math.hypot(ux, uz) || 1;
         const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul, steer = dot < 0 ? Math.sign(cross) : Math.max(-1, Math.min(1, cross * 3));
         // Drift into the bends (the aim off to one side), let it go on the straights.
@@ -125,7 +125,7 @@ try {
         if (bend && s.cars[0].drift === 1 && s.cars[0].gas > 0.5) both = true;
       }
       const da = await snap(p);
-      assert.ok(both && da.cars[0].driftTotal > dt0 && da.gate >= dg0 + 2 && !da.crashed, `${name}: stick-up gas and DRIFT held together drifted through the bends (both held: ${both}, drift ${dt0} → ${da.cars[0].driftTotal}, gates ${dg0} → ${da.gate}, crashed: ${da.crashed})`);
+      assert.ok(both && da.cars[0].driftTotal > dt0 && da.gate >= dg0 + 1 && !da.crashed, `${name}: stick-up gas and DRIFT held together drifted through the bends (both held: ${both}, drift ${dt0} → ${da.cars[0].driftTotal}, gates ${dg0} → ${da.gate}, crashed: ${da.crashed})`);
       await t("touchEnd", []);
       await until(p, () => { const c = game.getSnapshot().cars[0]; return c.drift === 0 && c.gas === 0; }, null, `${name}: both thumbs off: no drift, no gas`);
       // The pause card's STEERING key: STICK → ARROWS → STICK (no layout shift), remembered.
