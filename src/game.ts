@@ -31,6 +31,7 @@ import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI
 import { ITEM_NAMES, IT_BLASTER, IT_OIL, IT_MINE, IT_SHIELD, H_STALL, H_SPIN, BK, BOK, ZK, NBOLT, NHAZ } from "./items.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
+import { buildBuggy, wheelLayers, type Buggy } from "./buggy.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
 import { encode, decode, packMode, unpackMode, hashOf, joinRoom, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, SEATS, NAME, type Lockstep } from "./net.ts";
@@ -138,6 +139,8 @@ interface View {
   tv: TerrainView | null;
   cars: DioramaObject[];
   hubs: DioramaObject[][];
+  /** Per car, the built buggy (its wheels change layer with the camera). */
+  bugs: Buggy[];
   tails: DioramaObject[][];
   gates: DioramaObject[][];
   dust: DioramaPoints | null;
@@ -267,7 +270,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     el.append(canvas, vh);
     viewsEl.append(el);
     const v: View = {
-      i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], tails: [], gates: [], dust: null, spark: null, sky: null,
+      i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], bugs: [], tails: [], gates: [], dust: null, spark: null, sky: null,
       MB: new Float64Array(6), MAP: [],
       TABLE: { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 },
       chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false },
@@ -412,7 +415,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function buildScene(v: View) {
     const d = v.d, t = sim.t, HX = sim.HX, HZ = sim.HZ, race = isRace() ? rc() : null;
     d.clear();
-    v.cars = []; v.hubs = []; v.tails = []; v.gates = [];
+    v.cars = []; v.hubs = []; v.bugs = []; v.tails = []; v.gates = [];
     d.setLight(P.light, P.amb);
     d.cluster("sky", { fixed: -10 });
     d.cluster("table", { fixed: -5 });
@@ -513,47 +516,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     pose(v);
   }
 
-  /** A buggy: a low tub with side pods and a wedge nose, a splitter, a cage with a light bar, a rear
-   *  wing; the driver's helmet; four knobbly wheels on dished hubs. Its colours: body and accent. */
+  /** A buggy (`buildBuggy`): its colours, body and accent. */
   function buildCar(v: View, k: number) {
-    const d = v.d, id = "car" + k, [body, acc] = P.cars[k]!;
-    v.cars.push(d.add({ id, shape: "group", size: [2.0, 0, 1.6], tag: { car: k } }));
-    const part = (size: number[], pos: number[], color: string, op: { shape?: "box" | "wedge" | "cyl"; emissive?: boolean; sides?: number; top?: number; rot?: number[] } = {}) =>
-      d.add({ shape: op.shape || "box", size, pos, rot: op.rot, on: id, color, emissive: op.emissive, sides: op.sides, top: op.top, pick: false });
-    part([1.92, 0.14, 0.86], [0, -0.26, 0], P.chassis);
-    part([1.04, 0.28, 0.66], [-0.16, -0.12, 0], body!);
-    // Side pods end ahead of the rear wheels and well behind the front ones; the nose and splitter
-    // stay narrower than the front wheels' inner faces at full lock (no tyre ever cuts the body).
-    for (const z of [-0.42, 0.42]) part([0.98, 0.22, 0.2], [-0.2, -0.12, z], body!);
-    for (const z of [-0.42, 0.42]) part([0.86, 0.06, 0.22], [-0.2, 0.1, z], acc!);
-    part([0.7, 0.24, 0.7], [0.76, -0.12, 0], body!, { shape: "wedge" });
-    part([0.3, 0.05, 0.78], [1.04, -0.28, 0], acc!);
-    // Suspension arms out to each wheel.
-    for (const x of [0.8, -0.74]) for (const z of [-0.53, 0.53]) part([0.09, 0.05, x > 0 ? 0.2 : 0.26], [x, -0.27, z], P.cage);
-    part([1.6, 0.04, 0.16], [0.02, 0.17, 0], acc!);
-    part([0.44, 0.32, 0.6], [-0.86, -0.08, 0], P.chassis);
-    for (const z of [-0.17, 0.17]) part([0.1, 0.28, 0.1], [-1.02, -0.02, z], P.hub, { shape: "cyl", sides: 6 });
-    for (const z of [-0.27, 0.27]) part([0.06, 0.32, 0.06], [-0.98, 0.18, z], P.chassis);
-    part([0.34, 0.05, 0.94], [-1.02, 0.5, 0], acc!);
-    part([0.3, 0.3, 0.3], [-0.24, 0.16, 0], P.helmet, { shape: "cyl", sides: 8, top: 0.75 });
-    part([0.06, 0.1, 0.24], [-0.09, 0.24, 0], P.visor);
-    for (const x of [-0.56, 0.14]) for (const z of [-0.36, 0.36]) part([0.06, 0.6, 0.06], [x, 0.16, z], P.cage);
-    for (const z of [-0.36, 0.36]) part([0.76, 0.06, 0.06], [-0.21, 0.76, z], P.cage);
-    part([0.06, 0.06, 0.78], [-0.56, 0.76, 0], P.cage);
-    part([0.06, 0.06, 0.78], [0.14, 0.76, 0], P.cage);
-    part([0.12, 0.09, 0.62], [0.16, 0.8, 0], P.lamp, { emissive: true });
-    for (const z of [-0.28, 0.28]) part([0.04, 0.07, 0.16], [1.1, -0.1, z], P.lamp, { emissive: true });
-    v.tails[k] = [part([0.05, 0.08, 0.16], [-1.09, 0.06, -0.24], P.tail, { emissive: true }), part([0.05, 0.08, 0.16], [-1.09, 0.06, 0.24], P.tail, { emissive: true })];
-    const car = sim.cars[k]!, hs: DioramaObject[] = [];
-    for (let i = 0; i < 4; i++) {
-      const hid = id + "h" + i, side = car.wheels[i * 2 + 1]! > 0 ? 1 : -1;
-      const hub = d.add({ id: hid, shape: "group", size: [0.6, 0, 0.6], on: id });
-      d.add({ shape: "cyl", sides: 14, size: [0.74, 0.32, 0.74], pos: [0, 0, -0.16], rot: [Math.PI / 2, 0, 0], on: hid, color: P.tyre, pick: false });
-      d.add({ shape: "cyl", sides: 8, size: [0.42, 0.05, 0.42], pos: [0, 0, side > 0 ? 0.16 : -0.21], rot: [Math.PI / 2, 0, 0], on: hid, color: k ? acc! : P.hub, pick: false });
-      d.add({ size: [0.38, 0.06, 0.06], pos: [0, -0.03, side > 0 ? 0.2 : -0.21], on: hid, color: P.chassis, pick: false });
-      hs.push(hub);
-    }
-    v.hubs[k] = hs;
+    const [body, acc] = P.cars[k]!;
+    const b = buildBuggy(v.d, "car" + k, { chassis: P.chassis, body: body!, acc: acc!, cage: P.cage, hub: P.hub, helmet: P.helmet, visor: P.visor, lamp: P.lamp, tail: P.tail, tyre: P.tyre, cap: k ? acc! : P.hub }, sim.cars[k]!.wheels, { car: k });
+    v.cars.push(b.root);
+    v.tails[k] = b.tails;
+    v.hubs[k] = b.hubs;
+    v.bugs[k] = b;
   }
 
   // ---- state ----
@@ -597,6 +567,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, dv.steerAngle)) : 0;
         h.rot[2] = -dv.spin[i]!;
       }
+      wheelLayers(v.d, v.bugs[k]!);
       const x = car.pos[0]!, z = car.pos[2]!, inside = Math.abs(x) < HX && Math.abs(z) < HZ, lift = inside ? car.pos[1]! - t.height(x, z) : 9;
       v.tv!.shadow(k, x, z, 1.3, inside ? Math.max(0, 0.34 - lift * 0.1) : 0);
     }
