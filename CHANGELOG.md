@@ -1,7 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- Online is smooth on phones. 0.2.2 made every frame wait for every player's input, sent only two
+  frames ahead, so on a phone's network (a 100 ms round trip) the race stalled almost every frame and
+  ran in slow motion. Now your own buggy answers at once: each frame runs straight away with your
+  input and a guess for everyone else's, and when a real input turns out different the race goes
+  back to that frame and runs forward again (rollback), the same on every screen. Remote buggies ease
+  into place instead of popping. Measured on a stand-in room server with phone links (60–150 ms round
+  trips, ± 30 ms jitter, 300 ms spikes): the race at 60 frames a second instead of 9 to 13, no
+  waiting instead of about 3,000 stalled frames a minute, your key to the screen in 17 ms (p50)
+  instead of 133 to 183 ms. Leavers (the AI drives on), REMATCH and the desync check work as before.
+- No more crashing out. A bad landing, a flip or a rollover is a short tumble: the buggy rights
+  itself and drives on from where it came down. Only flying off the table's edge (or into
+  Freestyle's gap) puts you back at your gate or table. Every mode.
+- BATTLE (CLEAN / BATTLE on the menu, remembered; the host's pick online): item boxes on the track
+  and on every Freestyle table. Drive through one to hold an item; ITEM fires it (F, E or right Ctrl;
+  P2 in a split: right Ctrl, `.` or numpad 0; the ★ key on a phone; a gamepad's left bumper).
+  Blaster (three bolts: a hit stalls the car), oil slick (dropped behind: the next car spins out),
+  zap mine (armed after a moment: a big tumble that rights itself), shield (blocks one hit). No
+  health, nobody is ever out. The back of the pack draws better; the rivals pick up and fire theirs
+  too. Hits go off in Fizlet's fx blasts, with sound.
+- King of the Table (Freestyle with two or more, split or online): a glowing home pad each. Points
+  are carried and bank only on your pad; landing on someone else's pad steals a fifth of their bank;
+  a tumble or a hit spills a quarter of what you carry. The most banked when the jam ends wins.
+- Online: BATTLE and King of the Table for up to four (items, boxes and hits in the state hash).
 - Phones: gas and drift at once. The stick gives the gas (push up), so the separate GAS key is gone;
   DRIFT is now the big key in the corner under the right thumb, ★ ITEM takes DRIFT's old place, and
   BRAKE and BOOST stay. The stick is a little bigger (120 px at 390 wide, 16 px clear of the edge).
@@ -11,6 +34,7 @@
   draw puts a wheel over the body when it is on the camera's side of the car and under it when it
   is on the far side, for every buggy (rivals too) in every view; a test checks the paint order at
   16 headings × 3 pitches × 3 rolls under three cameras.
+- The size budget is 86,000 bytes gzip (the build: 84,686).
 
 ## 0.2.2
 
