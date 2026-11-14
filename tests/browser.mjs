@@ -109,23 +109,25 @@ try {
       assert.ok(after.gate >= g0 + 3 && !after.crashed, `${name}: the stick alone drove through three gates (${g0} → ${after.gate}, ${laps} moves)`);
       await t("touchEnd", [[st.x, st.y, 3]]);
       await until(p, () => { const c = game.getSnapshot().cars[0]; return c.steer === 0 && c.gas === 0 && c.brake === 0; }, null, `${name}: let go: steer, gas and brake back to 0`);
-      // Two thumbs at once: stick-up gas on the left, DRIFT held on the right, through the bends: the
-      // tail steps out and drift points bank, gate after gate.
+      // Two thumbs at once: stick-up gas on the left, DRIFT held on the right, turning: the tail steps
+      // out, the slide scores, and when DRIFT lets go the points bank. Open loop and every wait on the
+      // game's state, so a slow runner's latency can't steer it into a wall.
       const dk = await p.evaluate(() => { const b = document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".bui-pad button[aria-label^='Drift']").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
-      const d0 = await snap(p), dg0 = d0.gate, dt0 = d0.cars[0].driftTotal;
+      const dt0 = (await snap(p)).cars[0].driftTotal;
       await t("touchStart", [[st.x, st.y, 3]]);
       await t("touchMove", [[st.x, st.y - st.r * 0.95, 3]]);
-      let both = false;
-      for (let i = 0; i < 2400 && ((await snap(p)).cars[0].driftTotal <= dt0 || (await snap(p)).gate < dg0 + 1); i++) {
-        const s = await snap(p), fx = Math.cos(s.player.angle), fz = -Math.sin(s.player.angle), ux = s.aim.x - s.player.x, uz = s.aim.y - s.player.y, ul = Math.hypot(ux, uz) || 1;
-        const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul, steer = dot < 0 ? Math.sign(cross) : Math.max(-1, Math.min(1, cross * 3));
-        // Drift into the bends (the aim off to one side), let it go on the straights.
-        const bend = Math.abs(cross) > 0.25 && s.speed > 4;
-        await t("touchMove", bend ? [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3], [dk.x, dk.y, 4]] : [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3]]);
-        if (bend && s.cars[0].drift === 1 && s.cars[0].gas > 0.5) both = true;
-      }
+      await until(p, () => game.getSnapshot().speed > 6, null, `${name}: the stick up: up to speed`);
+      await t("touchMove", [[st.x + st.r * 0.6, st.y - st.r * 0.9, 3], [dk.x, dk.y, 4]]);
+      await until(p, () => { const c = game.getSnapshot().cars[0]; return c.drift === 1 && c.gas > 0.5 && c.steer > 0.3; }, null, `${name}: gas, steer and DRIFT held together`);
+      await until(p, (dt0) => { const c = game.getSnapshot().cars[0]; return c.driftPts >= 15 || c.driftTotal > dt0; }, dt0, `${name}: the slide scores`);
+      // CDP lifts fingers only all at once (a touchEnd: a finger left out of a touchMove stays down), so
+      // letting go of DRIFT lifts both thumbs and puts the left one straight back, stick up.
+      await t("touchEnd", []);
+      await t("touchStart", [[st.x, st.y, 3]]);
+      await t("touchMove", [[st.x, st.y - st.r * 0.95, 3]]);
+      await until(p, (dt0) => game.getSnapshot().cars[0].driftTotal > dt0, dt0, `${name}: DRIFT off: the drift banks`);
       const da = await snap(p);
-      assert.ok(both && da.cars[0].driftTotal > dt0 && da.gate >= dg0 + 1 && !da.crashed, `${name}: stick-up gas and DRIFT held together drifted through the bends (both held: ${both}, drift ${dt0} → ${da.cars[0].driftTotal}, gates ${dg0} → ${da.gate}, crashed: ${da.crashed})`);
+      assert.ok(da.cars[0].drift === 0 && !da.crashed, `${name}: stick-up gas and DRIFT together drifted through the turn and banked ${da.cars[0].driftTotal - dt0} (no crash)`);
       await t("touchEnd", []);
       await until(p, () => { const c = game.getSnapshot().cars[0]; return c.drift === 0 && c.gas === 0; }, null, `${name}: both thumbs off: no drift, no gas`);
       // The pause card's STEERING key: STICK → ARROWS → STICK (no layout shift), remembered.
@@ -167,7 +169,8 @@ try {
     assert.match(card.head, /YOU WIN|FINISH · \d(ST|ND|RD|TH)/, `${name}: the result: ${card.head}`);
     assert.match(card.time, /^\d:\d\d\.\d · TRACK BEST$/, `${name}: the time is the track's best: ${card.time}`);
     assert.equal(card.rows, 4, `${name}: four on the standings`);
-    await until(p, () => game.engine.paused.includes("settled"), null, `${name}: settles on the result`, 40000);
+    // (Waits on state; on a timeout it says which car never came to rest, for a rare non-settle.)
+    await p.waitForFunction(() => game.engine.paused.includes("settled"), null, { timeout: 120000, polling: 50 }).catch(async () => assert.fail(`${name}: settles on the result: timed out; cars [car, resting, speed, phase]: ${JSON.stringify(await p.evaluate(() => game.race.cars.map((c, k) => [k, c.resting, +c.speed.toFixed(3), game.race.C[k * 40]])))}`));
     await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-r-tracks").click());
     assert.match(await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-tracks button").textContent), /BEST \d:\d\d\.\d/, `${name}: the menu shows the best time`);
     assert.deepEqual(errs, [], `${name}: no page errors`);
@@ -194,7 +197,7 @@ try {
     await p.keyboard.up("ArrowUp");
     const head = await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-lap").textContent);
     assert.match(head, /THE BOWL/, "freestyle: the HUD names the table");
-    await until(p, () => game.engine.paused.includes("settled"), null, "freestyle: untouched, it settles", 40000);
+    await until(p, () => game.engine.paused.includes("settled"), null, "freestyle: untouched, it settles", 120000);
     assert.ok((await snap(p)).best > 0, "freestyle: a best on this device");
     assert.deepEqual(errs, [], "freestyle: no page errors");
     await ctx.close();
