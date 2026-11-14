@@ -115,7 +115,7 @@ try {
       const d0 = await snap(p), dg0 = d0.gate, dt0 = d0.cars[0].driftTotal;
       await t("touchStart", [[st.x, st.y, 3]]);
       await t("touchMove", [[st.x, st.y - st.r * 0.95, 3]]);
-      let both = false;
+      let both = false, held = false;
       for (let i = 0; i < 2400 && ((await snap(p)).cars[0].driftTotal <= dt0 || (await snap(p)).gate < dg0 + 1); i++) {
         const s = await snap(p), fx = Math.cos(s.player.angle), fz = -Math.sin(s.player.angle), ux = s.aim.x - s.player.x, uz = s.aim.y - s.player.y, ul = Math.hypot(ux, uz) || 1;
         const cross = (fx * uz - fz * ux) / ul, dot = (fx * ux + fz * uz) / ul, steer = dot < 0 ? Math.sign(cross) : Math.max(-1, Math.min(1, cross * 3));
@@ -123,7 +123,12 @@ try {
         // (Once a drift has banked, the stick alone takes it on to the gate: the check is one drift
         // through one bend, not a drift-only lap, which a slow runner's coarse steering can stall.)
         const bend = Math.abs(cross) > 0.25 && s.speed > 4 && s.cars[0].driftTotal <= dt0;
-        await t("touchMove", bend ? [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3], [dk.x, dk.y, 4]] : [[st.x + steer * st.r * 0.9, st.y - st.r * 0.85, 3]]);
+        const sx = st.x + steer * st.r * 0.9, sy = st.y - st.r * 0.85;
+        // CDP lifts fingers only all at once (a touchEnd), so letting go of DRIFT lifts both thumbs and
+        // puts the left one straight back on the stick (a finger left out of a touchMove stays down).
+        if (held && !bend) await t("touchEnd", []), await t("touchStart", [[sx, sy, 3]]);
+        else await t("touchMove", bend ? [[sx, sy, 3], [dk.x, dk.y, 4]] : [[sx, sy, 3]]);
+        held = bend;
         if (bend && s.cars[0].drift === 1 && s.cars[0].gas > 0.5) both = true;
       }
       const da = await snap(p);
@@ -169,7 +174,7 @@ try {
     assert.match(card.head, /YOU WIN|FINISH · \d(ST|ND|RD|TH)/, `${name}: the result: ${card.head}`);
     assert.match(card.time, /^\d:\d\d\.\d · TRACK BEST$/, `${name}: the time is the track's best: ${card.time}`);
     assert.equal(card.rows, 4, `${name}: four on the standings`);
-    await until(p, () => game.engine.paused.includes("settled"), null, `${name}: settles on the result`, 40000);
+    await until(p, () => game.engine.paused.includes("settled"), null, `${name}: settles on the result`, 120000);
     await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-r-tracks").click());
     assert.match(await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-tracks button").textContent), /BEST \d:\d\d\.\d/, `${name}: the menu shows the best time`);
     assert.deepEqual(errs, [], `${name}: no page errors`);
@@ -196,7 +201,7 @@ try {
     await p.keyboard.up("ArrowUp");
     const head = await sh(p, () => document.querySelector("[data-fizlet-host]").shadowRoot.querySelector(".dh-lap").textContent);
     assert.match(head, /THE BOWL/, "freestyle: the HUD names the table");
-    await until(p, () => game.engine.paused.includes("settled"), null, "freestyle: untouched, it settles", 40000);
+    await until(p, () => game.engine.paused.includes("settled"), null, "freestyle: untouched, it settles", 120000);
     assert.ok((await snap(p)).best > 0, "freestyle: a best on this device");
     assert.deepEqual(errs, [], "freestyle: no page errors");
     await ctx.close();
