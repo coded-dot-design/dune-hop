@@ -27,6 +27,11 @@ air, and pick the shortcut or the long way each lap. They see the other cars: th
 they can't pass and step round it, and RUST leans on anyone in reach. Cars collide; hit a car while it
 drifts and it spins out. They tumble too.
 
+**Suspension:** long travel, like a desert buggy or a trophy truck: each wheel rides its own soft,
+progressive spring on a swinging arm (over half a unit of travel), so the whoops work the wheels one
+by one, the body pitches and rolls on the springs, and a big landing sinks deep, rebounds once and
+settles instead of slamming. Drift, contact and suspension are all `@fzlt/core/drive`'s (0.24).
+
 **Stunts:** every landing is judged by its airtime and how far off the slope it came down. Clean
 landings score and build a combo; sketchy ones score once; nose it in or roll it and you **tumble**:
 a short roll, then the buggy rights itself and drives on from where it came down (you lose the combo,
@@ -144,7 +149,7 @@ node scripts/shots.mjs  # the hero's still poster and the share image, from the 
 `src/tracks.ts` (the tracks as data and the course builder), `src/race.ts` (the race: cars, gates,
 laps, rivals, boost), `src/tumble.ts` (the tumble that rights itself), `src/items.ts` (BATTLE), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
 session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room),
-`src/rollback.ts` (rollback over the room: guesses, snapshots, corrections, a leaver), `src/state.ts` (a brick's whole state as bytes),
+`src/rollback.ts` (rollback over the room: guesses, snapshots, corrections, a leaver),
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 

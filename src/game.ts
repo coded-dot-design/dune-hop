@@ -31,7 +31,7 @@ import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI
 import { ITEM_NAMES, IT_BLASTER, IT_OIL, IT_MINE, IT_SHIELD, H_STALL, H_SPIN, BK, BOK, ZK, NBOLT, NHAZ } from "./items.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
-import { buildBuggy, wheelLayers, type Buggy } from "./buggy.ts";
+import { buildBuggy, poseArm, wheelLayers, type Buggy } from "./buggy.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
 import { encode, decode, packMode, unpackMode, joinRoom, rollback, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, GONE, SEATS, NAME, type Rollback } from "./net.ts";
@@ -572,6 +572,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         h.pos[2] = dv.wheels[i * 2 + 1]!;
         h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, dv.steerAngle)) : 0;
         h.rot[2] = -dv.spin[i]!;
+        poseArm(v.bugs[k]!, i);
       }
       wheelLayers(v.d, v.bugs[k]!);
       const x = car.pos[0]!, z = car.pos[2]!, inside = Math.abs(x) < HX && Math.abs(z) < HZ, lift = inside ? car.pos[1]! - t.height(x, z) : 9;
