@@ -23,7 +23,7 @@ import { pad, type Pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
 import { mount as buiMount } from "@fzlt/core/ui";
 import { presence, type Presence, type Transport } from "@fzlt/core/presence";
-import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
+import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
@@ -89,6 +89,9 @@ export interface DuneHopOptions {
   laps?: number;
   /** Called when a race ends. */
   onEnd?: (r: DuneHopResult) => void;
+  /** Offer "2 · SPLIT" on a touch-only device too (default false: two on one phone is held back for
+   *  now; keyboards, gamepads and mice keep it). */
+  splitOnTouch?: boolean;
 }
 export interface DuneHopResult { track: string; place: number; time: number; bestLap: number; score: number; best: boolean }
 
@@ -224,6 +227,12 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (v && typeof v === "object") (pick.mode = v.mode === "free" ? "free" : "race"), (pick.players = v.players === "2" ? "2" : "1"), (pick.rivals = v.rivals === 0 ? 0 : 3);
   } catch {}
   if (qs.get("mode") === "online") pick.players = "net";
+  // Split screen on one phone is held back (owner, 2026-11-14): a touch-only device (a coarse pointer
+  // and no fine one, so not a laptop with a touch screen) gets 1 PLAYER and ONLINE. The code stays.
+  const touchOnly = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches && !matchMedia("(any-pointer: fine)").matches;
+  const splitOK = !touchOnly || !!o.splitOnTouch || qs.get("split") === "touch";
+  if (!splitOK && pick.players === "2") pick.players = "1";
+  if (!splitOK) hud.querySelector('[data-seg="players"] [data-v="2"]')?.remove();
 
   // ---- the views ----
   let P: Pal = DARK;
@@ -258,41 +267,43 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   let NV = 1;
   const active = (v: View) => v.i < NV;
 
-  // Touch: two layouts for the left thumb, picked on the pause card and remembered on the device:
-  // "steer", a left/right pad (steer only), or "stick", the analog stick. GAS, BRAKE, DRIFT and BOOST
-  // sit under the right thumb either way. In a split each half has its own pad.
-  const padKind = () => (store.get("pad") === "stick" ? "stick" : "buttons");
+  // Touch: two layouts for the left thumb, cycled on the pause card and remembered on the device.
+  // "stick" (the default): the analog stick, left/right steers and up/down is gas/brake too (the most
+  // of stick and key wins, as in any driving game); "arrows": a left and a right key. Under the right
+  // thumb either way: GAS (the big one, in the corner), BRAKE, DRIFT and BOOST as icon keys in a
+  // cluster. In a split each half has its own pad. Every choice saved by 0.2.0 ("pad") moves to the
+  // stick: its stick never steered there, so nobody chose the arrows over a working one.
+  type Steer = "stick" | "arrows";
+  const steerKind = (): Steer => (store.get("steer") === "arrows" ? "arrows" : "stick");
+  let steer = steerKind();
   const v0 = makeView(0);
+  const ICON = (d: string) => `<svg viewBox="0 0 20 20" aria-hidden="true"><path d="${d}"/></svg>`;
+  const KEY = {
+    gas: { intent: "gas", label: "", name: "Gas (up arrow)", icon: ICON("M5 12l5-5 5 5M5 17l5-5 5 5"), key: "↑", role: "go", hold: true },
+    brake: { intent: "brake", label: "", name: "Brake (down arrow)", icon: ICON("M5 5l5 5 5-5M4.5 15h11"), key: "↓", role: "attack", hold: true },
+    drift: { intent: "drift", label: "", name: "Drift, the handbrake (shift)", icon: ICON("M4 16c0-6.5 4-10 11-10M12 3l3 3-3 3"), key: "⇧", role: "fallin", hold: true },
+    nitro: { intent: "nitro", label: "", name: "Nitro boost (space)", icon: ICON("M11.5 2L5 11h4.5L8 18l7-9.5h-4.5z"), key: "␣", role: "sys", hold: true },
+  } as const;
   const padOf = (cc: Controls, host: HTMLElement) => {
-    const p = pad(engine, cc, {
-      scheme: padKind(),
-      move: ["", "", "left", "right"],
-      actions: [
-        { intent: "gas", label: "GAS", name: "Gas (up arrow)", key: "↑", role: "go", hold: true },
-        { intent: "brake", label: "BRAKE", name: "Brake (down arrow)", key: "↓", role: "attack", hold: true },
-        { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "fallin", hold: true },
-        { intent: "nitro", label: "BOOST", name: "Nitro boost (space)", key: "␣", role: "sys", hold: true },
-      ],
-      host,
-    });
+    const p = pad(engine, cc, { scheme: steer === "stick" ? "stick" : "buttons", move: ["", "", "left", "right"], actions: [KEY.gas, KEY.brake, KEY.drift, KEY.nitro], host });
     p.el.classList.add("dh-pad");
+    for (const b of p.el.querySelectorAll<HTMLElement>(".bui-pad-keys button")) b.title = b.getAttribute("aria-label")!.replace(/ \(.*$/, "");
     return p;
   };
   const thePad = padOf(c, v0.el);
   let pad2: Pad | null = null;
   const padK = () => hud.querySelector(".dh-padk") as HTMLButtonElement;
   function paintPad() {
-    const stick = thePad.scheme === "stick";
-    stage.toggleAttribute("data-stick", stick);
+    stage.dataset.steer = steer;
     const k = padK();
-    if (k) (k.textContent = stick ? "STICK" : "◀ ▶ PAD"), k.setAttribute("aria-label", `Touch steering: ${stick ? "the stick" : "the left and right pad"} (tap to switch)`);
+    if (k) (k.textContent = steer === "stick" ? "STICK" : "◀ ▶ ARROWS"), k.setAttribute("aria-label", `Touch steering: ${steer === "stick" ? "the stick (steer, gas and brake)" : "the arrow keys with GAS and BRAKE"} (tap to switch)`);
   }
+  /** STICK ⇄ ARROWS (fingers on the old control let go; no listener is added). */
   function swapPad() {
-    const next = thePad.scheme === "stick" ? "buttons" : "stick";
-    thePad.setScheme(next);
-    pad2?.setScheme(next);
-    store.set("pad", next === "stick" ? "stick" : "steer");
-    for (const cc of [c, c2]) cc.press("left", false), cc.press("right", false);
+    steer = steer === "stick" ? "arrows" : "stick";
+    store.set("steer", steer);
+    for (const p of [thePad, pad2]) p?.setScheme(steer === "stick" ? "stick" : "buttons");
+    for (const cc of [c, c2]) for (const k of ["gas", "brake", "left", "right", "nitro", "drift"]) cc.press(k, false);
     paintPad();
   }
 
@@ -770,7 +781,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   function sharedHud() {
     const R = sim.R, solo = NV === 1 && !net.on;
-    const hint = mode === "race" && solo && (R[0] === COUNT || (!isRace() && R[1]! < 6 && !moved)) ? (thePad.el.offsetParent ? "Hold GAS · steer left thumb · DRIFT into the bends · BOOST when the bar is full" : isRace() ? "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it" : "↑ gas straight off the ramp to jump to the next table · SHIFT drift · SPACE nitro · land flat for the combo") : "";
+    const hint = mode === "race" && solo && (R[0] === COUNT || (!isRace() && R[1]! < 6 && !moved)) ? (thePad.el.offsetParent ? "Stick: steer, push up for gas · or hold GAS · DRIFT into the bends · BOOST when the bar is full" : isRace() ? "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it" : "↑ gas straight off the ramp to jump to the next table · SHIFT drift · SPACE nitro · land flat for the combo") : "";
     if (hintEl.textContent !== hint) hintEl.textContent = hint;
     // The demo lap shows only the race (the page's copy sits over it); the menu only its card.
     const hideHead = mode === "menu" || mode === "demo";
@@ -829,7 +840,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     });
     if (!parkEl.childElementCount)
       parkEl.innerHTML = ["SALT FLATS", "THE BOWL", "DUNE SEA", "NEON YARD"].map((n, i) => `<li style="--c:var(--dh-t${i})"><b>${n}</b><small>${["Kicker line, tabletop, whoops, a drift ring", "A deep bowl, a spine, a hip", "Ridged dunes and a banked U-turn", "A rail, stair ledges, a funbox"][i]}</small></li>`).join("");
-    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Steer with the left thumb; GAS, BRAKE, DRIFT and BOOST with the right." : pick.players === "2" ? "P1: W A S D · left SHIFT drift · SPACE nitro. P2: arrows · right SHIFT drift · ENTER nitro. Gamepads work too." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
+    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? "Left thumb: the stick steers (push up for gas, pull down to brake). Right thumb: GAS, BRAKE, DRIFT, BOOST." : pick.players === "2" ? "P1: W A S D · left SHIFT drift · SPACE nitro. P2: arrows · right SHIFT drift · ENTER nitro. Gamepads work too." : "↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro · P pause · V view";
   }
   function showCard(which: HTMLElement | null) {
     for (const el of [menu, pauseC, result, roomC]) el.hidden = el !== which;
@@ -1409,9 +1420,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   /** Person p's inputs into I (keys or pad, the pointer for P1 alone, a gamepad). */
   function readInput(p: number) {
     const cc = ctl(p), q = p * 5, alone = NV === 1;
-    I[0] = Math.max(cc.down(GAS) || (alone && PD[0]) ? 1 : 0, GP[q]!);
-    I[1] = Math.max(cc.down(BRAKE) ? 1 : 0, GP[q + 1]!);
-    const st = alone && PD[0] ? Math.max(-1, Math.min(1, (PD[2]! - PD[1]!) / Math.max(40, v0.d.width * 0.1))) : cc.axis("left", "right");
+    // The touch stick (pad): x steers (through axis), up is gas and down the brake, both analog.
+    const sy = cc.stick.active ? cc.stick.y : 0;
+    I[0] = Math.max(cc.down(GAS) || (alone && PD[0]) ? 1 : 0, GP[q]!, -sy);
+    I[1] = Math.max(cc.down(BRAKE) ? 1 : 0, GP[q + 1]!, sy);
+    const st = alone && PD[0] ? Math.max(-1, Math.min(1, (PD[2]! - PD[1]!) / Math.max(40, v0.d.width * 0.1))) : cc.axis("left", "right", 0);
     I[2] = Math.max(-1, Math.min(1, st + GP[q + 2]!));
     I[3] = cc.down(NITRO) || GP[q + 3] ? 1 : 0;
     I[4] = Math.max(cc.down(DRIFT) ? 1 : 0, GP[q + 4]!);
@@ -1735,7 +1748,6 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const up = (e: PointerEvent) => void (e.pointerId === PD[3] && ((PD[0] = 0), (PD[3] = -1)));
   play.addEventListener("pointerup", up, sig);
   play.addEventListener("pointercancel", up, sig);
-  thePad.el.addEventListener("pointerdown", () => (mode === "demo" && takeOver(), engine.wake()), sig);
   function toggleMute() {
     snd.on = !snd.on;
     paintMute();
@@ -1745,6 +1757,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   $(".dh-k-tracks").addEventListener("click", () => (net.on ? setPaused(true) : showMenu()), sig);
   $(".dh-k-pause").addEventListener("click", () => setPaused(!paused), sig);
   $(".dh-resume").addEventListener("click", () => setPaused(false), sig);
+  thePad.el.addEventListener("pointerdown", () => (mode === "demo" && takeOver(), engine.wake()), sig);
   $(".dh-padk").addEventListener("click", swapPad, sig);
   for (const s of hud.querySelectorAll<HTMLElement>("[data-seg]"))
     for (const b of s.querySelectorAll<HTMLButtonElement>("button"))
@@ -1825,7 +1838,12 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     getSnapshot() {
       const R = sim.R, C = sim.C, me = v0.car, v = sim.cars[me]!, o2 = me * K;
       const status = destroyed ? "destroyed" : mode === "menu" ? "idle" : paused ? "paused" : !result.hidden ? (isRace() ? (C[o2 + PLACE] === 1 ? "won" : "gameover") : fs().winner() === me ? "won" : "gameover") : "running";
-      const car = (c0: number) => ({ x: sim.pos[c0 * 3]! * 20, y: sim.pos[c0 * 3 + 2]! * 20, angle: sim.cars[c0]!.yaw, speed: sim.cars[c0]!.speed, score: sim.scs[c0]!.S[SC]!, table: isRace() ? -1 : C[c0 * K + FTABLE]!, transfers: isRace() ? 0 : C[c0 * K + XFERS]!, place: isRace() ? C[c0 * K + PLACE]! : 0 });
+      const car = (c0: number) => ({ x: sim.pos[c0 * 3]! * 20, y: sim.pos[c0 * 3 + 2]! * 20, angle: sim.cars[c0]!.yaw, speed: sim.cars[c0]!.speed, score: sim.scs[c0]!.S[SC]!, table: isRace() ? -1 : C[c0 * K + FTABLE]!, transfers: isRace() ? 0 : C[c0 * K + XFERS]!, place: isRace() ? C[c0 * K + PLACE]! : 0, gas: sim.IN[c0 * IK]!, brake: sim.IN[c0 * IK + 1]!, steer: sim.IN[c0 * IK + 2]! });
+      // A point on the racing line about 4 m ahead of your car (race only): what a driver looks at.
+      const aim = () => {
+        const tr = rc().tr, pi = C[o2 + PI_]!, p = tr.paths[pi]!, i = pi ? Math.min(p.n - 1, C[o2 + IDX]! + 8) : (C[o2 + IDX]! + 8) % p.n;
+        return { x: p.P[i * 2]! * 20, y: p.P[i * 2 + 1]! * 20 };
+      };
       return {
         status, mode, kind: sim.kind, track: api.track, phase: R[0] === COUNT ? "count" : R[0] === RUN ? "race" : "done", elapsed: R[1]!, place: isRace() ? C[o2 + PLACE]! : 0, lap: isRace() ? C[o2 + LAP]! : 0, laps: isRace() ? rc().laps : 0, gate: isRace() ? C[o2 + NEXT]! : 0,
         score: sim.scs[me]!.S[SC]!, combo: sim.scs[me]!.S[CB]!, nitro: sim.N[me * 2]!, crashed: C[o2 + PH] === CRASH, view: view ? "chase" : "table", speed: v.speed, air: v.air, lapStart: isRace() ? C[o2 + LAPT]! : 0,
@@ -1833,6 +1851,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         cars: Array.from({ length: sim.humans }, (_, i) => car(i)),
         net: net.link ? { frame: net.link.frame, desync: net.link.desync, stalls: net.link.stalls, lost: net.link.lost } : null,
         player: { x: sim.pos[me * 3]! * 20, y: sim.pos[me * 3 + 2]! * 20, angle: v.yaw },
+        aim: isRace() ? aim() : null,
       };
     },
     /** Your buggy's screen point (CSS px from the canvas's top left), as of the last draw. */

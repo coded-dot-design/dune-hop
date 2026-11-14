@@ -71,11 +71,20 @@
 .dh .dh-results li.dh-you{background:var(--k-sys);color:var(--rim)}
 .dh .dh-results li i{width:.9em;height:.9em;border-radius:3px;border:2px solid var(--rim)}
 .dh .dh-hidden,.dh [hidden]{display:none!important}
-.dh .dh-pad{--u:.78px;display:none}
-.dh .dh-pad .bui-pad-keys{max-width:none;flex-wrap:nowrap}
+.dh .dh-pad{--u:.76px;display:none}
+/* The right thumb's cluster: GAS (96u) in the corner, BRAKE, DRIFT and BOOST (62u) on a 106u arc round
+   it (left, diagonal, up), like a console's face keys: each a short roll of the thumb from GAS. */
+.dh .dh-pad .bui-pad-keys{position:relative;display:block;flex:none;width:calc(185 * var(--u));height:calc(185 * var(--u));max-width:none}
+.dh .dh-pad .bui-pad-keys>*{position:absolute;--r:calc(106 * var(--u));--o:calc(17 * var(--u))}
+.dh .dh-pad .bui-pad-keys>:nth-child(1){right:0;bottom:0}
+.dh .dh-pad .bui-pad-keys>:nth-child(2){right:calc(var(--o) + var(--r));bottom:var(--o)}
+.dh .dh-pad .bui-pad-keys>:nth-child(3){right:calc(var(--o) + var(--r) * .7071);bottom:calc(var(--o) + var(--r) * .7071)}
+.dh .dh-pad .bui-pad-keys>:nth-child(4){right:var(--o);bottom:calc(var(--o) + var(--r))}
+.dh .dh-pad .bui-pad-keys svg{width:calc(28 * var(--u));height:calc(28 * var(--u));stroke-width:2.6}
+.dh .dh-pad .bui-pad-keys .bui-primary svg{width:calc(42 * var(--u));height:calc(42 * var(--u))}
 @media (pointer:coarse){.dh .dh-pad{display:flex}.dh .dh-hint{display:none}}
 @container stage (max-width:760px){.dh .dh-hud,.dh .dh-vhud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
-@media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(104px,22cqh,132px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(104px,22cqh,132px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(104px,22cqh,132px) + 14px)}}}
+@media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(156px,22cqh,164px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(156px,22cqh,164px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(156px,22cqh,164px) + 14px)}}}
 @container stage (max-width:520px){.dh .dh-tracks{grid-template-columns:1fr}.dh .dh-card{padding:.8em .8em .9em}.dh .dh-card>b{font-size:1.5em}}
 @media (prefers-reduced-motion:reduce){.dh .dh-toast,.dh .dh-count,.dh .dh-pos,.dh .dh-drift{rotate:0deg}}
 .dh[data-demo] .dh-pad{display:none!important}.dh[data-demo] canvas,.dh[data-demo] .dh-play{height:100%!important}

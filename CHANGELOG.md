@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Phones: the stick now drives. In 0.2.0 the touch stick moved on screen but the game never read it
+  (the steering read the arrow keys only), so the car sat still. Now the stick is the default: left
+  and right steer (analog, with the stick's dead zone), push up for gas and pull down to brake, both
+  analog; the GAS and BRAKE keys still work alongside it (the stronger of the two wins).
+- Phones: GAS, BRAKE, DRIFT and BOOST are icon keys (each named, with a tooltip) in a cluster in the
+  bottom-right corner, GAS the big one in the corner and the other three round it, every key 44 px
+  or more.
+- The pause card's STEERING key swaps STICK and ◀ ▶ ARROWS (left and right keys). Every choice saved
+  by 0.2.0 moves to the stick.
+- 2 · SPLIT is offered on desktops (keyboards, gamepads) only for now; on a touch-only phone the menu
+  has 1 PLAYER and ONLINE.
+
 ## 0.2.0
 
 - Freestyle (RACE / FREESTYLE on the menu): no race, no clock; four large tables side by side
