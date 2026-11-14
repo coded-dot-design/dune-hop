@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - Phones: the stick now drives. In 0.2.0 the touch stick moved on screen but the game never read it
   (the steering read the arrow keys only), so the car sat still. Now the stick is the default: left
