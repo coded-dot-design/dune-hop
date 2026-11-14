@@ -4,7 +4,7 @@
    keys on the right; calls in the middle; the track menu, pause and results cards. The touch keys are
    @fzlt/core/pad, on touch screens only; on a tall stage (a phone held upright) the course sits on top
    and the pad under it. */
-.dh{position:absolute;inset:0;overflow:hidden;container:stage/size;background:var(--dh-bg,#0d0b1c);color:var(--ink);font:900 clamp(11px,1.45cqw,15px)/1.15 ui-rounded,"SF Pro Rounded",Nunito,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.dh{position:absolute;inset:0;overflow:hidden;container:stage/size;background:var(--dh-bg,#0d0b1c);color:var(--ink);font:900 clamp(11px,1.45cqw,15px)/1.15 ui-rounded,"SF Pro Rounded",Nunito,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;overscroll-behavior:none}
 .dh[data-day]{--dh-bg:#9c5f45}
 .dh canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
 .dh .dh-play{position:absolute;left:0;top:0;width:100%;height:100%;border:0;margin:0;padding:0;background:transparent;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent;outline-offset:-4px;font:inherit;color:transparent}
@@ -49,7 +49,7 @@
 .dh .dh-count.dh-go{background:var(--k-go);color:var(--rim)}
 .dh .dh-demo{position:absolute;left:50%;bottom:16px;translate:-50% 0;margin:0;padding:.5em .9em;background:var(--k-go);color:var(--rim);border:2px solid var(--rim);border-radius:22px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);letter-spacing:.05em;white-space:nowrap}
 .dh .dh-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0}
-.dh .dh-card{position:absolute;left:50%;top:50%;translate:-50% -50%;display:grid;justify-items:center;gap:.55em;width:min(92%,34em);max-height:calc(100% - 24px);overflow:auto;padding:1em 1.2em 1.1em;background:var(--surface);color:var(--ink);border:2.5px solid var(--rim);border-radius:14px;box-shadow:calc(6px * var(--bui-sx,1)) calc(6px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);text-align:center;pointer-events:auto;overscroll-behavior:contain}
+.dh .dh-card{position:absolute;left:50%;top:50%;translate:-50% -50%;display:grid;justify-items:center;gap:.55em;width:min(92%,34em);max-height:calc(100% - 24px);overflow:auto;padding:1em 1.2em 1.1em;background:var(--surface);color:var(--ink);border:2.5px solid var(--rim);border-radius:14px;box-shadow:calc(6px * var(--bui-sx,1)) calc(6px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);text-align:center;pointer-events:auto;overscroll-behavior:contain;touch-action:pan-y}
 .dh .dh-card>b{font-size:1.9em;letter-spacing:.06em}
 .dh .dh-card p{margin:0}
 .dh .dh-card .dh-sub{color:var(--muted);font-size:.95em;line-height:1.35}

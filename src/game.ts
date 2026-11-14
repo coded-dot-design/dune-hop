@@ -21,6 +21,7 @@ import { createEngine, seeded } from "@fzlt/core/kernel";
 import { diorama, type Diorama, type DioramaObject, type DioramaPoints } from "@fzlt/core/diorama";
 import { terrainView, type TerrainView } from "@fzlt/core/terrain";
 import { chase } from "@fzlt/core/drive";
+import { lockTouch } from "@fzlt/core/touch";
 import { controls, type Controls } from "@fzlt/core/input";
 import { pad, type Pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
@@ -37,6 +38,10 @@ import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts"
 import { encode, decode, packMode, unpackMode, joinRoom, rollback, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, GONE, SEATS, NAME, type Rollback } from "./net.ts";
 
 const TAU = 6.283185307179586;
+/** The vertical field of view every framing starts at (radians); a resize then holds the scale. */
+const FOV = 0.62;
+/** The chase camera's look-ahead: seconds of the buggy's velocity, across the picture. */
+const AHEAD = 0.26;
 type Sim = Race | Freestyle;
 
 // ---- palettes by role: night (dark), a hot sunset (light), and the city at night ----
@@ -152,8 +157,7 @@ interface View {
   TABLE: { yaw: number; pitch: number; dist: number; tx: number; ty: number; tz: number; ox: number; oy: number; fov: number };
   chaseO: { dist: number; pitch: number; lift: number; ahead: number; rate: number; turn: number; side: number; snap: boolean };
   CTP: Float64Array;
-  VEL: Float64Array;
-  target: { pos: Float64Array; yaw: number; vel: Float64Array };
+  target: { pos: Float64Array; yaw: number };
   car: number;
   head: HTMLElement;
   els: HTMLElement[];
@@ -164,6 +168,9 @@ interface View {
   shake: number;
   /** [safe top, safe bottom]. */
   safe: Float64Array;
+  /** The framing lock: [0] focal (px per world unit at depth 1) held since the race (or menu) began,
+   *  [1] the CSS width it was set at, [2] when a real (width) change reframes: 0 for none. */
+  LK: Float64Array;
   was: Float64Array;
   /** BATTLE: the item boxes (a group each, spun and bobbed), the view's blasts (screen space: fx)
    *  and the world point the last one is pinned to [x, y, z, screen x, screen y]. */
@@ -272,14 +279,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     const v: View = {
       i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], bugs: [], tails: [], gates: [], dust: null, spark: null, sky: null,
       MB: new Float64Array(6), MAP: [],
-      TABLE: { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 },
-      chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false },
-      CTP: new Float64Array(3), VEL: new Float64Array(3), target: null as unknown as View["target"], car: i,
+      TABLE: { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: FOV },
+      chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0, rate: 3.4, turn: 2.8, side: 0, snap: false },
+      CTP: new Float64Array(3), target: null as unknown as View["target"], car: i,
       head: vh.querySelector(".dh-head") as HTMLElement, els: [], toastEl: vh.querySelector(".dh-toast") as HTMLElement, countEl: vh.querySelector(".dh-count") as HTMLElement,
-      toastT: 0, countT: 0, shake: 0, safe: new Float64Array(2), was: new Float64Array(20).fill(-1),
+      toastT: 0, countT: 0, shake: 0, safe: new Float64Array(2), LK: new Float64Array(3), was: new Float64Array(20).fill(-1),
       boxes: [], fx: effects({ cap: 320, gravity: 260 }), FXA: new Float64Array(5),
     };
-    v.target = { pos: v.CTP, yaw: 0, vel: v.VEL };
+    v.target = { pos: v.CTP, yaw: 0 };
     const q = (s: string) => v.head.querySelector(s) as HTMLElement;
     v.els = [q(".dh-pos span"), q(".dh-lap span"), q(".dh-time span"), q(".dh-time small"), q(".dh-score span"), q(".dh-score i"), q(".dh-drift"), q(".dh-drift span"), q(".dh-nitro"), q(".dh-nitro b i"), q(".dh-pos small"), q(".dh-lap small"), q(".dh-pos"), q(".dh-lap"), q(".dh-time"), q(".dh-item"), q(".dh-item i"), q(".dh-item span"), q(".dh-carry"), q(".dh-carry span")];
     v.d = diorama(canvas, { light: P.light, ambient: P.amb, background: () => P.table, overlay: (ctx) => drawOverlay(ctx, v), get shadowColor() { return P.shadow; }, maxFaces: 12000 });
@@ -531,8 +538,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   // Pointer drive: down, start x, current x, id.
   const PD = new Float64Array(4);
   PD[3] = -1;
-  // [0] measure, [1] theme.
-  const V = new Float64Array(2);
+  // [0] measure (a resize, a quality step), [1] theme, [2] reframe (a new race, the menu, a split:
+  // set by the game itself, never by a resize).
+  const V = new Float64Array(3);
   V[0] = V[1] = 1;
   // Online, after a correction: each buggy is drawn where it was and eases to where the sim now says
   // (OFF, decaying), so a remote car never pops. PRE: the poses just before the state went back.
@@ -549,6 +557,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const mo = new MutationObserver(() => ((V[1] = 1), engine.wake()));
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
   engine.signal.addEventListener("abort", () => (ro.disconnect(), mo.disconnect(), (destroyed = true), net.end(false)), { once: true });
+  // No browser zoom on the play surface: CSS (touch-action, game.css) stops a double-tap's zoom and a
+  // pinch where it can; lockTouch cancels the rest on the stage alone (iOS Safari's gesture events,
+  // which ignore user-scalable=no, and any two-finger touch). One finger is never touched, and the
+  // rest of the page keeps its pinch-zoom.
+  engine.signal.addEventListener("abort", lockTouch(document), { once: true });
 
   function pose(v: View) {
     const t = sim.t, HX = sim.HX, HZ = sim.HZ;
@@ -902,7 +915,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (keysEl.hidden !== (mode === "demo")) keysEl.hidden = mode === "demo";
     demoEl.hidden = mode !== "demo";
     // The demo lap has no pad (and the course takes the whole stage); a takeover brings it back.
-    if (stage.hasAttribute("data-demo") !== (mode === "demo")) stage.toggleAttribute("data-demo", mode === "demo"), (V[0] = 1), engine.wake();
+    if (stage.hasAttribute("data-demo") !== (mode === "demo")) stage.toggleAttribute("data-demo", mode === "demo"), (V[0] = V[2] = 1), engine.wake();
   }
   function boardWrite() {
     if (!isRace()) return;
@@ -1024,7 +1037,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     TRN.fill(0);
     buildAll();
     paintWho();
-    V[0] = 1;
+    V[0] = V[2] = 1;
   }
   /** One view, or two side by side (stacked on a tall stage). */
   function setSplit(on: boolean) {
@@ -1039,7 +1052,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     if (views[1]) views[1].el.hidden = !on;
     stage.toggleAttribute("data-split", on);
     for (const cc of [c, c2]) for (const k of PADK) cc.press(k, false);
-    V[0] = 1;
+    V[0] = V[2] = 1;
   }
   let moved = false;
   function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0), fresh = true) {
@@ -1052,7 +1065,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     v0.car = net.on ? net.seat : 0;
     if (views[1]) views[1].car = 1;
     paintWho();
-    V[0] = 1;
+    V[0] = V[2] = 1;
     mode = auto && o.attract ? "demo" : "race";
     paused = false;
     moved = false;
@@ -1087,7 +1100,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function showMenu() {
     if (net.on) net.end(false);
     mode = "menu";
-    V[0] = 1;
+    V[0] = V[2] = 1;
     paused = false;
     setSplit(false);
     setup(pick.mode, 1, 3, def.id);
@@ -1142,11 +1155,20 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     TABLE.dist = 30;
     TABLE.tx = TABLE.ty = TABLE.ox = TABLE.oy = 0;
     TABLE.tz = 0.4;
+    TABLE.fov = FOV;
     // On a wide stage the menu sits on the left: the preview takes the right.
     const left = mode === "menu" && W > 900 ? Math.min(W * 0.46, 600) : 8;
     d.fit(TABLE, pts, { x0: left, y0: v.safe[0]!, x1: W - 8, y1: H - v.safe[1]! });
     v.chaseO.dist = tall ? 17.5 : 14;
     v.chaseO.pitch = tall ? 0.7 : 0.55;
+    v.LK[0] = H / 2 / Math.tan(FOV / 2);
+    v.LK[1] = W;
+    v.LK[2] = 0;
+  }
+  /** The fov that keeps view v's locked focal at its canvas's height now (both views). */
+  function hold(v: View) {
+    const fov = 2 * Math.atan(v.d.height / 2 / v.LK[0]!);
+    v.TABLE.fov = v.d.cam.fov = fov;
   }
   /** The chase target: the view's buggy (clamped to the table's edge when it goes over). */
   function aim(v: View, snap: boolean) {
@@ -1155,21 +1177,39 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     v.CTP[0] = Math.max(-HX - 1, Math.min(HX + 1, sim.pos[p]!));
     v.CTP[1] = Math.max(-1, sim.pos[p + 1]!);
     v.CTP[2] = Math.max(-HZ - 1, Math.min(HZ + 1, sim.pos[p + 2]!));
-    v.VEL[0] = dv.vel[0]!; v.VEL[2] = dv.vel[2]!;
+    // The look-ahead (0.26 s of velocity) leads across the picture, up it and to the side, never
+    // along the line of sight: a lead towards the lens would be a zoom on every change of speed.
+    const cam = v.d.cam, cp = Math.cos(cam.pitch), ax = Math.sin(cam.yaw) * cp, ay = Math.sin(cam.pitch), az = Math.cos(cam.yaw) * cp, along = dv.vel[0]! * ax + dv.vel[2]! * az;
+    v.CTP[0] += (dv.vel[0]! - along * ax) * AHEAD;
+    v.CTP[1] -= along * ay * AHEAD;
+    v.CTP[2] += (dv.vel[2]! - along * az) * AHEAD;
     if (snap) (v.chaseO.snap = true), chase(v.d.cam, v.target, v.chaseO, 1 / 60), (v.chaseO.snap = false);
   }
   function stepCam(v: View, dt: number) {
     const cam = v.d.cam;
+    // A width change that held: reframe, eased (never a snap mid-race).
+    if (v.LK[2]! && engine.time >= v.LK[2]!) frameTable(v), engine.busy(1.5);
     if (view) {
       aim(v, false);
       // The demo drifts the camera round a little (the attract lap's showreel).
       v.chaseO.side = mode === "demo" && !reduced ? 0.42 * Math.sin(engine.time * 0.21) : 0;
       v.chaseO.snap = reduced;
       // On a wide hero the demo sits right of centre, clear of the page's copy on the left.
-      const m = chase(cam, v.target, v.chaseO, dt), k = 1 - Math.exp(-4 * dt), ox = mode === "demo" && v.d.width > 760 ? v.d.width * 0.2 : 0;
+      let m = chase(cam, v.target, v.chaseO, dt);
+      // The steady framing: chase's follow lags (that is its feel, across the picture), but along
+      // the line of sight the lag would draw the buggy smaller as it speeds up and bigger as it
+      // brakes or lands. So the target slides along that line to the buggy's depth, quickly (about
+      // 80 ms): a dolly with the buggy, never a zoom. Your buggy is drawn the same size all race.
+      const cp = Math.cos(cam.pitch), ax = Math.sin(cam.yaw) * cp, ay = Math.sin(cam.pitch), az = Math.cos(cam.yaw) * cp;
+      const r = (v.CTP[0]! - cam.tx) * ax + (v.CTP[1]! + v.chaseO.lift - cam.ty) * ay + (v.CTP[2]! - cam.tz) * az, kd = reduced ? 1 : 1 - Math.exp(-12 * dt);
+      if (Math.abs(r) > 1e-3) (cam.tx += ax * r * kd), (cam.ty += ay * r * kd), (cam.tz += az * r * kd), (m = true);
+      const k = 1 - Math.exp(-4 * dt), ox = mode === "demo" && v.d.width > 760 ? v.d.width * 0.2 : 0;
       cam.ox += (ox - cam.ox) * k;
       cam.oy -= cam.oy * k;
-      return m || Math.abs(cam.ox - ox) + Math.abs(cam.oy) > 0.2;
+      // The fov follows the view's (a reframe after a width change) over about a second.
+      const df = v.TABLE.fov - cam.fov;
+      cam.fov = Math.abs(df) < 1e-4 || reduced ? v.TABLE.fov : cam.fov + df * (1 - Math.exp(-3 * dt));
+      return m || Math.abs(cam.ox - ox) + Math.abs(cam.oy) > 0.2 || df !== 0;
     }
     const k = reduced ? 1 : 1 - Math.exp(-2.6 * dt);
     let moving = false;
@@ -2046,7 +2086,8 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         if (next !== P) (P = next), stage.toggleAttribute("data-day", !P.night), buildAll(), (dirty = true);
       }
       if (V[0]) {
-        V[0] = 0;
+        const re = V[2];
+        V[0] = V[2] = 0;
         for (const v of views) {
           if (!active(v)) continue;
           const vr = v.el.getBoundingClientRect(), hr = v.head.getBoundingClientRect(), cr = v.canvas.getBoundingClientRect();
@@ -2055,9 +2096,20 @@ export function createDuneHop(o: DuneHopOptions = {}) {
           v.safe[1] = 10;
           v.sky = null;
           v.MB[5] = 0;
-          frameTable(v);
-          if (!view) Object.assign(v.d.cam, v.TABLE);
-          else aim(v, true);
+          if (re || !v.LK[0]) {
+            // A new race, the menu or a split: frame afresh and lock that scale.
+            frameTable(v);
+            v.d.cam.fov = FOV;
+            if (!view) Object.assign(v.d.cam, v.TABLE);
+            else aim(v, true);
+          } else {
+            // A resize (the mobile URL bar, a quality step, a window drag): the picture keeps its
+            // scale (the focal locked when the race began; the fov opens or closes to the new height)
+            // and the camera never snaps. Only a width change (or any change on the menu, whose
+            // preview should fit) reframes, eased, once it has held for 0.4 s.
+            hold(v);
+            if (Math.abs(v.d.width - v.LK[1]!) > 1 || mode === "menu") (v.LK[2] = engine.time + 0.4), engine.busy(0.6);
+          }
         }
         hudDirty = dirty = true;
       }
@@ -2298,6 +2350,13 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     carScreen() {
       v0.d.project(sim.pos[v0.car * 3]!, sim.pos[v0.car * 3 + 1]!, sim.pos[v0.car * 3 + 2]!, tmp);
       return [tmp[0]!, tmp[1]!];
+    },
+    /** View i's camera as of the last draw (tests): distance, pitch, fov, the canvas's CSS size, and
+     *  `scale`, screen px per world unit at your buggy (focal ÷ its depth): how big it is drawn. */
+    camera(i = 0) {
+      const v = views[i] ?? v0, cam = v.d.cam, p = v.car * 3;
+      v.d.project(sim.pos[p]!, sim.pos[p + 1]!, sim.pos[p + 2]!, tmp);
+      return { dist: cam.dist, pitch: cam.pitch, fov: cam.fov, w: v.d.width, h: v.d.height, focal: v.d.focal(), scale: v.d.focal() / Math.max(1e-6, tmp[2]!), view: view ? "chase" : "table" };
     },
     stop: () => api.destroy(),
     destroy() {
