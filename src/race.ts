@@ -53,7 +53,7 @@ export const CAR_OPTS = {
 };
 
 export interface RaceOptions {
-  /** People (cars 0..humans−1; default 1). */
+  /** People (cars 0..humans−1; default 1, at most 4: two on a split screen, up to four online). */
   humans?: number;
   /** AI rivals after them (default 3). */
   rivals?: number;
@@ -63,7 +63,7 @@ export interface RaceOptions {
 
 export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
   const tr: Track = buildTrack(def), t = tr.t, main = tr.main, NG = tr.GATE.length, LAPS = Math.max(1, ro.laps || def.laps);
-  const HUM = Math.max(1, Math.min(2, ro.humans ?? 1)), NC = Math.min(MAX_CARS, HUM + Math.max(0, ro.rivals ?? 3));
+  const HUM = Math.max(1, Math.min(4, ro.humans ?? 1)), NC = Math.min(MAX_CARS, HUM + Math.max(0, ro.rivals ?? 3));
   /** Rival profile of car c (people: none). */
   const rival = (c: number) => RIVALS[(c - HUM) % RIVALS.length]!;
   const cars: Drive[] = [];

@@ -49,13 +49,19 @@ alone, it settles (no frames) like the menu.
 a tall one; P1 on W A S D, left Shift drift, Space (or Q) nitro; P2 on the arrows, right Shift drift,
 Enter (or /) nitro; the first gamepad is P1, the second P2 (right trigger gas, left trigger brake,
 left stick steer, A boost, B drift); on a touch screen each half has its own steer pad and keys.
-*Online* (ONLINE): two screens over a fizlet-rooms room, the same invite code and room on both
-(SEND LINK copies a link with them); whoever joins first picks the mode, track and rivals. The sim
-runs in lockstep on both screens and only inputs travel (`@fzlt/core/presence`: 32 bits per seat per
-frame, sent two frames ahead; a state hash every 30 frames catches a desync). Both race, or a
-three-minute Freestyle jam (the higher score wins); REMATCH on both starts the next on the same
-frame; if one leaves, the other screen says so and the match ends. Rivals are optional in a
-two-player race (3 RIVALS / NO RIVALS).
+*Online* (ONLINE): two to four phones (or screens) over a fizlet-rooms room, each with its own
+view. HOST opens a room (pick 2, 3 or 4 players): the card shows the room number and the invite
+code in big type, and SEND LINK opens the phone's share sheet (or copies the link): the link has the
+room and the code, so it drops a friend straight into the room after the code check. JOIN takes the
+room number by hand. Every player can type a name (kept on the device); the seats show in their
+buggies' colours. The room starts when the host's count is in, or on START NOW with two or more; the
+host's mode, track and rivals ride along (with AI rivals on, they fill the grid to six). The sim runs
+in lockstep on every screen and only inputs travel (`@fzlt/core/presence`: 32 bits per seat per frame,
+sent two frames ahead; a state hash every 30 frames catches a desync). A race, or a three-minute
+Freestyle jam for up to four (the top score wins); REMATCH on every screen starts the next on the same
+frame. If someone leaves, the AI drives their buggy from the next frame on, the same on every screen,
+and the match goes on; when everyone else has gone it ends. A room is as big as the room server
+allows (its `MAX_PLAYERS`, at most four here).
 
 **Controls.** ↑/W gas, ↓/S brake (reverse when stopped), ←→/AD steer, Shift drift, Space nitro; in the air gas
 lifts the nose and brake dips it. P pause, V camera (chase or the whole table), M sound, R restart,
@@ -95,8 +101,9 @@ npm test              # headless: tracks, a full race on every track, Freestyle 
                       # caught), determinism, allocation
 npm run test:settle   # the menu and the hero sleep, the race never does, off screen pauses, Recall
 npm run test:browser  # Chromium at 1440 and 390: keyboard, mouse, touch, pause, a full race, Freestyle,
-                      # split screen, Recall; then tests/online.mjs: two pages race online against a
-                      # stand-in room server (tests/room-server.mjs)
+                      # split screen, Recall; then tests/online.mjs: four pages (two at 1440, two
+                      # phones) race online against a stand-in room server (tests/room-server.mjs):
+                      # host, link, join by number, names, a leaver, rematch
 npm run site:build    # the site (landing + /play/) into artifacts/pages
 npm run test:site     # the site at 1440 and 390, light and dark
 node scripts/shots.mjs  # the hero's still poster and the share image, from the game
@@ -104,14 +111,15 @@ node scripts/shots.mjs  # the hero's still poster and the share image, from the 
 
 `src/tracks.ts` (the tracks as data and the course builder), `src/race.ts` (the race: cars, gates,
 laps, rivals, boost, crashes), `src/park.ts` and `src/freestyle.ts` (the Freestyle park and its
-session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room),
+session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format, the room, lockstep that survives a leaver),
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 
 Custom domain: `pages.yml` builds with `SITE_URL=https://dunehop.domvirus.com` and `SITE_BASE=/`
 (repo variables override) and writes the `CNAME` from it. Online play uses `PUBLIC_ROOMS_URL`
 (default `wss://fizlet-rooms.fizlet.workers.dev`); the room server must list
-`https://dunehop.domvirus.com` in its allowed origins.
+`https://dunehop.domvirus.com` in its allowed origins (`ALLOWED_ORIGINS`) and allow four seats
+(`MAX_PLAYERS`) for rooms of four.
 
 ## Licence
 

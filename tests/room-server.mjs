@@ -1,7 +1,11 @@
-// A stand-in fizlet-rooms server for the online test (tests/online.mjs; the same as Salvo Bay's): the wire protocol @fzlt/core/presence speaks
-// (12-byte messages; LOBBY, START, WELCOME, INPUT relayed with first write wins and rising frames,
-// LEAVE on a close) and the invite check (POST /invite), on Node's own http with a minimal WebSocket
-// (RFC 6455, binary frames only). Not the real server: no caps, no passes, no resume.
+// A stand-in fizlet-rooms server for the online test (tests/online.mjs; Salvo Bay's, grown to rooms of
+// up to four like the real one): the wire protocol @fzlt/core/presence speaks (12-byte messages; LOBBY,
+// START, WELCOME, INPUT relayed with first write wins and rising frames, LEAVE on a close) and the
+// invite check (POST /invite, which says how many seats a room may have), on Node's own http with a
+// minimal WebSocket (RFC 6455, binary frames only). As the real room does: every joiner must ask the
+// room's size (409 otherwise), the host's START begins once its count is seated (0: now), and a start
+// with fewer seats than the size renumbers them in arrival order. Not the real server: no caps, no
+// passes, no resume.
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 
@@ -14,14 +18,14 @@ const msg = (k, s, p, mode, a = 0, b = 0) => {
   return d;
 };
 
-export function roomServer() {
+export function roomServer({ max = 4 } = {}) {
   const rooms = new Map(), socks = new Set();
   const server = createServer((req, res) => {
     const cors = { "access-control-allow-origin": "*", "content-type": "application/json" };
     if (req.url.startsWith("/invite") && req.method === "POST") {
       let body = "";
       req.on("data", (c) => (body += c));
-      req.on("end", () => (body.trim().toUpperCase() === CODE ? res.writeHead(200, cors).end('{"ok":true,"players":2}') : res.writeHead(403, cors).end('{"ok":false}')));
+      req.on("end", () => (body.trim().toUpperCase() === CODE ? res.writeHead(200, cors).end(JSON.stringify({ ok: true, players: max })) : res.writeHead(403, cors).end('{"ok":false}')));
       return;
     }
     res.writeHead(404, cors).end("{}");
@@ -29,21 +33,29 @@ export function roomServer() {
   server.on("upgrade", (req, sock) => {
     const url = new URL(req.url, "http://x"), m = url.pathname.match(/^\/room\/(\d+)$/), protos = String(req.headers["sec-websocket-protocol"] ?? "").split(",").map((s) => s.trim());
     if (!m || !protos.includes("invite." + CODE)) return sock.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+    const players = Number(url.searchParams.get("players")) || 2, key = m[1];
+    if (players < 1 || players > max || (rooms.get(key) && rooms.get(key).asked !== players)) return sock.end("HTTP/1.1 409 Conflict\r\n\r\n");
     const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+    let room = rooms.get(key);
     sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\nSec-WebSocket-Protocol: fizlet-rooms\r\n\r\n`);
     socks.add(sock);
     sock.on("close", () => socks.delete(sock));
-    const players = Math.max(2, Number(url.searchParams.get("players")) || 2), key = m[1];
-    let room = rooms.get(key);
-    if (!room) rooms.set(key, (room = { seats: [], players, started: false, want: 0, mode: 0, seed: (Math.random() * 2 ** 32) >>> 0, frames: new Map() }));
-    if (room.started || room.seats.filter(Boolean).length >= room.players) return sock.end();
-    const peer = { sock, slot: room.seats.indexOf(null) < 0 ? room.seats.length : room.seats.indexOf(null), buf: Buffer.alloc(0), send: (d) => !sock.destroyed && sock.write(Buffer.concat([Buffer.from([0x82, d.length]), d])) };
+    if (!room) rooms.set(key, (room = { seats: new Array(players).fill(null), players, asked: players, started: false, want: 0, mode: 0, seed: (Math.random() * 2 ** 32) >>> 0, frames: new Map() }));
+    // Full or playing: the socket opens and closes at once (the real room closes it 4000 "room full").
+    if (room.started || room.seats.indexOf(null) < 0) return sock.end(Buffer.from([0x88, 0]));
+    const peer = { sock, slot: room.seats.indexOf(null), buf: Buffer.alloc(0), send: (d) => !sock.destroyed && sock.write(Buffer.concat([Buffer.from([0x82, d.length]), d])) };
     room.seats[peer.slot] = peer;
     const taken = () => room.seats.filter(Boolean);
     const lobby = () => room.seats.forEach((p, s) => p?.send(msg(LOBBY, s, room.players, taken().length)));
     const ready = () => {
       const n = taken().length;
       if (room.started || !(n === room.players || (room.want && n >= room.want))) return;
+      if (n < room.players) {
+        // Fewer than the size: the seats taken, renumbered in arrival order (seat 0, the host, stays).
+        room.seats = taken();
+        room.seats.forEach((p, s) => (p.slot = s));
+        room.players = n;
+      }
       room.started = true;
       room.seats.forEach((p, s) => p.send(msg(WELCOME, s, n, room.mode, room.seed, 1 + s)));
     };

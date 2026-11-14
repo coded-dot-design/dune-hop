@@ -22,13 +22,13 @@ import { controls, type Controls } from "@fzlt/core/input";
 import { pad, type Pad } from "@fzlt/core/pad";
 import { sound } from "@fzlt/core/sound";
 import { mount as buiMount } from "@fzlt/core/ui";
-import { presence, type Presence, type Transport } from "@fzlt/core/presence";
+import type { Transport } from "@fzlt/core/presence";
 import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, type Race } from "./race.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
-import { encode, decode, packMode, unpackMode, hashOf, joinRoom, B_AUTO, B_READY } from "./net.ts";
+import { encode, decode, packMode, unpackMode, hashOf, joinRoom, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, SEATS, NAME, type Lockstep } from "./net.ts";
 
 const TAU = 6.283185307179586;
 type Sim = Race | Freestyle;
@@ -194,12 +194,15 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     `<p class="dh-sub dh-m-sub"></p><ul class="dh-tracks"></ul><ul class="dh-park" hidden></ul>` +
     `<p class="dh-row dh-m-rivals" hidden><small class="dh-sub">RIVALS</small><button type="button" class="bui-key dh-rivk" aria-pressed="true">3 RIVALS</button></p>` +
     `<p class="dh-row"><button type="button" class="bui-key dh-again dh-start">START</button></p><p class="dh-sub dh-menu-keys"></p></div>` +
-    `<div class="dh-card dh-roomc" role="dialog" aria-label="Online" data-step="join" hidden><b>ONLINE</b><p class="dh-sub dh-room-sub">TWO SCREENS, ONE TABLE</p>` +
-    `<form class="dh-room-join" data-for="join" novalidate><label class="dh-field">INVITE CODE<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" placeholder="DUNE-XXXX-XXXX" /></label>` +
-    `<p class="dh-row dh-rooms"><small class="dh-sub">ROOM</small><button type="button" class="bui-key" data-room="-1" aria-label="Previous room">−</button><output name="roomShow" aria-live="polite">0</output><button type="button" class="bui-key" data-room="1" aria-label="Next room">+</button></p>` +
-    `<p class="dh-row"><button type="submit" class="bui-key dh-again dh-join">JOIN</button><button type="button" class="bui-key dh-room-back">BACK</button></p><p class="dh-say" role="alert"></p>` +
-    `<p class="dh-sub">Both of you: the same code, the same room. Whoever joins first picks the mode and the track. Only inputs travel: both screens run the same race.</p></form>` +
-    `<div data-for="wait" hidden><ol class="dh-seats" aria-label="Seats"><li class="dh-me">P1 · YOU</li><li>OPEN SEAT</li></ol><p class="dh-big dh-wait-say">Waiting for player 2.</p><p class="dh-sub">Send the link: it has the code and the room, so they just press JOIN.</p><p class="dh-row"><button type="button" class="bui-key dh-share">SEND LINK</button><button type="button" class="bui-key dh-room-cancel">CANCEL</button></p></div>` +
+    `<div class="dh-card dh-roomc" role="dialog" aria-label="Online" data-step="pick" hidden><b>ONLINE</b><p class="dh-sub dh-room-sub">UP TO FOUR PHONES, ONE TABLE</p>` +
+    `<form class="dh-room-pick" data-for="pick" novalidate><label class="dh-field">YOUR NAME<input name="who" autocomplete="nickname" autocapitalize="characters" spellcheck="false" maxlength="8" placeholder="P1" /></label><label class="dh-field">INVITE CODE<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" placeholder="DUNE-XXXX-XXXX" /></label>` +
+    `<p class="dh-hostjoin"><button type="submit" class="bui-key dh-again dh-host" value="host"><b>HOST</b><small>OPEN A ROOM, SEND THE LINK</small></button><button type="submit" class="bui-key dh-joink" value="join"><b>JOIN</b><small>A ROOM SOMEONE OPENED</small></button></p>` +
+    `<p class="dh-say" role="alert"></p><p class="dh-row"><button type="button" class="bui-key dh-room-back">BACK</button></p></form>` +
+    `<div data-for="host" hidden><p class="dh-big">HOW MANY PLAYERS?</p><p class="dh-sizes" role="group" aria-label="Players"><button type="button" class="bui-key" data-size="2">2</button><button type="button" class="bui-key" data-size="3">3</button><button type="button" class="bui-key dh-again" data-size="4">4</button></p><p class="dh-sub dh-host-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-room-pickk">BACK</button></p></div>` +
+    `<form data-for="join" hidden novalidate><p class="dh-big">WHICH ROOM?</p><p class="dh-rooms"><button type="button" class="bui-key" data-room="-1" aria-label="Previous room">−</button><output name="roomShow" aria-live="polite">0</output><button type="button" class="bui-key" data-room="1" aria-label="Next room">+</button></p>` +
+    `<p class="dh-sub">The room number is on the host's screen (it's in their link too).</p><p class="dh-row"><button type="submit" class="bui-key dh-again dh-join">JOIN ROOM</button><button type="button" class="bui-key dh-room-pickk">BACK</button></p><p class="dh-say" role="alert"></p></form>` +
+    `<div data-for="wait" hidden><p class="dh-ticket"><span><small>ROOM</small><b class="dh-t-room">0</b></span><span><small>CODE</small><b class="dh-t-code"></b></span></p><ol class="dh-seats" aria-label="Seats"></ol><p class="dh-big dh-wait-say" aria-live="polite">Waiting for players.</p>` +
+    `<p class="dh-row"><button type="button" class="bui-key dh-again dh-share">SEND LINK</button><button type="button" class="bui-key dh-go" hidden>START NOW</button><button type="button" class="bui-key dh-room-cancel">CANCEL</button></p><p class="dh-sub dh-wait-sub">Send the link: it has the code and the room, so it drops them straight in.</p></div>` +
     `<div data-for="gone" hidden><p class="dh-big dh-gone-say"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-room-again">TRY AGAIN</button><button type="button" class="bui-key dh-room-menu">MENU</button></p></div></div>` +
     `<div class="dh-card dh-pausec" role="dialog" aria-label="Paused" hidden><b>PAUSED</b><p class="dh-sub dh-p-sub"></p><p class="dh-row"><button type="button" class="bui-key dh-again dh-resume">RESUME</button><button type="button" class="bui-key dh-restart">RESTART</button><button type="button" class="bui-key dh-totracks">MENU</button></p><p class="dh-row dh-touch"><small class="dh-sub">STEERING</small><button type="button" class="bui-key dh-padk"></button></p></div>` +
     `<div class="dh-card dh-result" role="dialog" aria-label="Result" hidden><b class="dh-r-head">RESULT</b><p class="dh-big dh-r-time"></p><p class="dh-sub dh-r-stats"></p><ol class="dh-results"></ol><p class="dh-row"><button type="button" class="bui-key dh-again dh-r-again">RACE AGAIN</button><button type="button" class="bui-key dh-r-next">NEXT TRACK</button><button type="button" class="bui-key dh-r-tracks">MENU</button></p></div>`;
@@ -805,7 +808,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       row.dataset.k = "" + key;
       (row.children[0] as HTMLElement).textContent = "" + (k + 1);
       (row.children[1] as HTMLElement).style.background = P.cars[car]![0]!;
-      (row.children[2] as HTMLElement).textContent = race.name(car);
+      (row.children[2] as HTMLElement).textContent = label(car);
       (row.children[3] as HTMLElement).textContent = C[o + PH] === FIN ? "FIN" : `L${Math.min(race.laps, C[o + LAP]! + 1)}`;
       row.classList.toggle("dh-you", car === v0.car);
     }
@@ -824,7 +827,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     rk.setAttribute("aria-pressed", "" + !!pick.rivals);
     $(".dh-m-sub").textContent = free
       ? pick.players === "1" ? `Four tables, no clock. Jump the ramps from table to table; air, transfers and drifts score, the combo multiplies. Best here: ${num(freeBest)}.` : "A three-minute jam on the four tables: the higher score wins."
-      : pick.players === "1" ? "Pick a track, then START. Three rivals, the clock, every jump and drift scored." : pick.players === "2" ? "Two on this screen: a view each. Pick a track, then START." : "Two screens over the internet: you need an invite code.";
+      : pick.players === "1" ? "Pick a track, then START. Three rivals, the clock, every jump and drift scored." : pick.players === "2" ? "Two on this screen: a view each. Pick a track, then START." : "Two to four phones over the internet, each its own view: you need an invite code.";
     $(".dh-start").textContent = pick.players === "net" ? "NEXT" : "START";
     tracksEl.innerHTML = "";
     TRACKS.forEach((d, i) => {
@@ -858,9 +861,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       if (newBest) store.set("best:" + id, time.toFixed(2));
       let head = place === 1 ? "YOU WIN" : `FINISH · ${ordinal(place).toUpperCase()}`;
       if (race.humans > 1) {
-        const p1 = C[PLACE]!, p2 = C[K + PLACE]!, w = p1 < p2 ? 0 : 1;
+        // The best-placed person wins (a rival may be ahead of everyone).
+        let w = 0;
+        for (let p = 1; p < race.humans; p++) if (C[p * K + PLACE]! < C[w * K + PLACE]!) w = p;
         const wp = C[w * K + PLACE]!;
-        head = (net.on && w === me ? "YOU WIN" : `P${w + 1} WINS`) + (wp > 1 ? ` · ${ordinal(wp).toUpperCase()}` : "");
+        head = (net.on && w === me ? "YOU WIN" : `${label(w)} WINS`) + (wp > 1 ? ` · ${ordinal(wp).toUpperCase()}` : "");
       }
       $(".dh-r-head").textContent = head;
       $(".dh-r-time").textContent = clock(time) + (newBest ? " · TRACK BEST" : solo && prev ? ` · best ${clock(prev)}` : "");
@@ -868,24 +873,26 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       $(".dh-r-stats").textContent = `best lap ${C[me * K + BEST]! ? clock(C[me * K + BEST]!) : "—"} · ${num(S[SC]!)} stunt pts · best air ${S[SBEST]!.toFixed(2)}s · ${S[CLEANS]} clean · top combo ×${1 + S[TOP]!}`;
       for (let k = 0; k < race.count; k++) {
         const car = race.order[k]! >= 0 ? race.order[k]! : race.rank[k]!, li = document.createElement("li"), ft = race.fin[car]!;
-        li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span>${race.name(car)}</span><span>${ft ? clock(ft) : "RACING"}</span>`;
-        if (car < race.humans) li.className = "dh-you";
+        li.innerHTML = `<b>${ordinal(k + 1)}</b><i style="background:${P.cars[car]![0]}"></i><span></span><span>${ft ? clock(ft) : "RACING"}</span>`;
+        li.children[2]!.textContent = label(car);
+        if (net.on ? car === me : car < race.humans) li.className = "dh-you";
         list.append(li);
       }
       say(`Finished ${ordinal(place)} in ${clock(time)}`);
       if (solo && !net.on) o.onEnd?.({ track: id, place, time, bestLap: C[me * K + BEST]!, score: S[SC]!, best: newBest });
     } else {
       const f = fs(), w = f.winner();
-      $(".dh-r-head").textContent = w < 0 ? "A DRAW" : net.on ? (w === me ? "YOU WIN" : `P${w + 1} WINS`) : `P${w + 1} WINS`;
-      $(".dh-r-time").textContent = `${num(f.scs[0]!.S[SC]!)} · ${num(f.scs[1]?.S[SC] ?? 0)}`;
+      $(".dh-r-head").textContent = w < 0 ? "A DRAW" : net.on && w === me ? "YOU WIN" : `${label(w)} WINS`;
+      $(".dh-r-time").textContent = f.scs.map((s) => num(s.S[SC]!)).join(" · ");
       $(".dh-r-stats").textContent = "Freestyle jam · three minutes on the four tables";
       for (let k = 0; k < f.count; k++) {
         const S = f.scs[k]!.S, li = document.createElement("li");
-        li.innerHTML = `<b>P${k + 1}</b><i style="background:${P.cars[k]![0]}"></i><span>${num(S[SC]!)} · ${f.C[k * K + XFERS]} transfers · best air ${S[SBEST]!.toFixed(2)}s · ×${1 + S[TOP]!}</span><span>${k === w ? "WIN" : ""}</span>`;
+        li.innerHTML = `<b></b><i style="background:${P.cars[k]![0]}"></i><span>${num(S[SC]!)} · ${f.C[k * K + XFERS]} transfers · best air ${S[SBEST]!.toFixed(2)}s · ×${1 + S[TOP]!}</span><span>${k === w ? "WIN" : ""}</span>`;
         li.className = k === me ? "dh-you" : "";
+        li.firstElementChild!.textContent = label(k);
         list.append(li);
       }
-      say(w < 0 ? "A draw" : `Player ${w + 1} wins`);
+      say(w < 0 ? "A draw" : `${label(w)} wins`);
     }
     showCard(result);
     for (const v of views) setView(v, 0);
@@ -906,6 +913,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     stage.toggleAttribute("data-solo", humans === 1);
     TRN.fill(0);
     buildAll();
+    paintWho();
     V[0] = 1;
   }
   /** One view, or two side by side (stacked on a tall stage). */
@@ -926,13 +934,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   let moved = false;
   function startRace(id = def.id, seed = o.seed ?? ((Math.random() * 2147483647) | 0), fresh = true) {
     if (fresh) {
-      const humans = net.on ? 2 : pick.players === "2" ? 2 : 1;
+      const humans = net.on ? net.players : pick.players === "2" ? 2 : 1;
       setup(net.on ? net.pick.mode : pick.mode, humans, net.on ? net.pick.rivals : pick.rivals, id);
       setSplit(!net.on && humans > 1);
       sim.reset(seed);
     }
     v0.car = net.on ? net.seat : 0;
     if (views[1]) views[1].car = 1;
+    paintWho();
     V[0] = 1;
     mode = auto && o.attract ? "demo" : "race";
     paused = false;
@@ -973,6 +982,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     setSplit(false);
     setup(pick.mode, 1, 3, def.id);
     v0.car = 0;
+    paintWho();
     menuWrite();
     showCard(menu);
     setView(v0, 0);
@@ -1316,7 +1326,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         if (k === v.car) continue;
         const p = k * 3;
         if (!d.project(sim.pos[p]!, sim.pos[p + 1]! + 1.3, sim.pos[p + 2]!, tmp) || tmp[2]! < 2 || tmp[2]! > 34) continue;
-        sticker(ctx, tmp[0]!, tmp[1]!, sim.name(k), P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
+        sticker(ctx, tmp[0]!, tmp[1]!, LBL[k] ?? sim.name(k), P.cars[k]![0]!, P.ink, Math.max(0.6, Math.min(1, f / tmp[2]! / 26)));
       }
     if (race) {
       const tr = race.tr;
@@ -1432,53 +1442,78 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
 
   // ---- online: the room, the lockstep link, rematch, leaving ----
+  const NONE = ["", "", "", ""];
   const net = {
     on: false,
     seat: 0,
+    /** Seats in the match (2 to SEATS). */
+    players: 2,
     seed: 0,
     round: 0,
     ready: false,
-    peerReady: false,
+    /** Seats asking for a rematch (bits) as of the last frame (a seat that left always asks). */
+    readyBits: 0,
+    /** Seats seen leaving (bits): each gets a toast once. */
+    leftSeen: 0,
     pick: { mode: "race" as "race" | "free", track: 0, rivals: 0, laps: 0 },
-    link: null as Presence | null,
+    link: null as Lockstep | null,
     abort: null as AbortController | null,
     room: Math.min(ROOM_N - 1, Math.max(0, Number(qs.get("room")) | 0)),
     code: "",
-    /** Start the match on this seat: the same sim on both screens, stepped by presence. */
-    begin(s: { transport: Transport; slot: number; seed: number; mode: number }) {
+    /** Seats per room: what the room server allows (its /invite says), at most SEATS. */
+    size: SEATS,
+    /** The players' names as they arrived (one character a frame, the first frames of the match). */
+    names: NONE.slice(),
+    /** Name characters sent so far. */
+    sent: 0,
+    /** The host's "start with the seats taken", while it waits in the lobby. */
+    go: null as (() => void) | null,
+    /** Start the match on this seat: the same sim on every screen, stepped in lockstep. */
+    begin(s: { transport: Transport; slot: number; players: number; seed: number; mode: number }) {
       const m = unpackMode(s.mode);
       net.on = true;
       net.seat = s.slot;
+      net.players = Math.max(2, Math.min(SEATS, s.players));
       net.seed = s.seed >>> 0;
       net.round = 0;
-      net.ready = net.peerReady = false;
+      net.ready = false;
+      net.readyBits = net.leftSeen = net.sent = 0;
+      net.names = NONE.slice();
+      net.go = null;
       net.pick = { mode: m.free ? "free" : "race", track: m.track, rivals: m.rivals, laps: m.laps };
       want.laps = m.laps;
       want.humans = -1;
       auto = false;
       startRace(TRACKS[m.track]!.id, net.seed);
-      net.link = presence(engine, {
-        transport: s.transport, slot: s.slot, players: 2,
+      net.link = lockstep(engine, {
+        transport: s.transport, slot: s.slot, players: net.players,
         input: () => {
           if (paused || !result.hidden || mode !== "race") readNone();
           else pollPads(), readInput(0);
-          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0));
+          const nm = net.sent < NAME ? nameBits(myName, net.sent++) : 0;
+          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0) | nm);
         },
-        step: (_e, inputs) => {
-          for (let p = 0; p < 2; p++) decode(inputs[p]!, p, sim.IN, sim.AUTO);
-          net.peerReady = !!(inputs[1 - net.seat]! & B_READY);
-          // A rematch: both READY in the same frame (so on the same frame on both screens).
-          if (sim.R[0] === DONE && inputs[0]! & B_READY && inputs[1]! & B_READY) return net.rematch();
+        step: (inputs, f) => {
+          let rb = 0;
+          for (let p = 0; p < net.players; p++) {
+            decode(inputs[p]!, p, sim.IN, sim.AUTO);
+            if (inputs[p]! & B_READY) rb |= 1 << p;
+          }
+          if (f >= 2 && f < 2 + NAME) takeNames(inputs, f - 2);
+          net.readyBits = rb;
+          // A rematch: every seat READY in the same frame (so on the same frame on every screen).
+          if (sim.R[0] === DONE && rb === (1 << net.players) - 1) return net.rematch();
           sim.step(1 / 60);
           if (sim.n) events();
         },
         hash: () => hashOf(sim.bytes),
       });
-      showNet(`ONLINE · ROOM ${net.room} · P${s.slot + 1}`, "live");
+      showNet(netSay(), "live");
     },
     rematch() {
       net.round++;
-      net.ready = net.peerReady = false;
+      net.ready = false;
+      net.readyBits = 0;
       sim.reset((Math.imul(net.seed, 2654435761) + net.round * 40503) >>> 0);
       startRace(def.id, 0, false);
     },
@@ -1486,6 +1521,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     end(menuToo: boolean) {
       net.abort?.abort();
       net.abort = null;
+      net.go = null;
       const was = net.on;
       net.on = false;
       try {
@@ -1494,16 +1530,62 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       net.link = null;
       netChip.hidden = true;
       want.laps = o.laps ?? 0;
+      for (const r of rows) r.dataset.k = "";
       if (was && menuToo && !destroyed) showMenu();
     },
+  };
+  /** Character k of every seat's name, from this frame's inputs. */
+  function takeNames(inputs: Uint32Array, k: number) {
+    for (let p = 0; p < net.players; p++) {
+      const ch = nameChar(inputs[p]!);
+      if (ch && net.names[p]!.length === k) net.names[p] += ch;
+    }
+    for (const r of rows) r.dataset.k = "";
+    if (k === NAME - 1) paintWho();
+  }
+  /** Car c's name on the board, the chip and the result card: an online player's own name (or P1..P4,
+   *  "· AI" once they left), else the sim's (YOU, P1, P2, a rival's). */
+  function label(c: number) {
+    if (!net.on || c >= net.players) return sim.name(c);
+    const n = net.names[c]!.trim() || "P" + (c + 1);
+    return net.link && net.link.left & (1 << c) ? n + " · AI" : n;
+  }
+  /** Each car's tag over the table (kept, so a frame builds no strings). */
+  const LBL: string[] = [];
+  /** Each view's player chip: its car's name, in its car's colour; the cars' tags. */
+  function paintWho() {
+    for (let k = 0; k < MAX_CARS; k++) LBL[k] = k < sim.count ? label(k) : "";
+    for (const v of views) {
+      const w = v.head.querySelector(".dh-who") as HTMLElement;
+      w.textContent = net.on ? label(v.car) : "P" + (v.i + 1);
+      w.style.background = net.on ? P.cars[v.car]![0]! : "";
+      w.style.color = net.on ? P.ink : "";
+    }
+    stage.toggleAttribute("data-online", net.on);
+  }
+  const quietSay = () => `ONLINE · ROOM ${net.room} · ${label(net.seat)}`;
+  const netSay = () => {
+    const nl = net.link, away = nl ? nl.link.away & ~(1 << net.seat) : 0, others = (1 << net.players) - 1;
+    let t = quietSay();
+    for (let p = 0; p < net.players; p++) if (away & (1 << p)) t += ` · ${label(p)} RECONNECTING`;
+    if (nl && nl.link.away & (1 << net.seat)) t += " · RECONNECTING";
+    if (!result.hidden && net.readyBits && net.readyBits !== others) t += ` · REMATCH ${popcount(net.readyBits)} OF ${net.players}`;
+    return t;
+  };
+  const popcount = (b: number) => {
+    let n = 0;
+    for (; b; b &= b - 1) n++;
+    return n;
   };
   const readNone = () => I.fill(0);
   function showNet(text: string, conn: string) {
     netChip.hidden = false;
     netChip.dataset.conn = conn;
-    netChip.lastElementChild!.textContent = text;
+    // Just "online, room n, you": a phone hides it (the chip with your name says whose buggy it is).
+    netChip.toggleAttribute("data-quiet", conn === "live" && text === quietSay());
+    if (netChip.lastElementChild!.textContent !== text) netChip.lastElementChild!.textContent = text;
   }
-  /** The other screen left (or the link broke, or the two sims disagree): the match ends here. */
+  /** The match ended for this screen (everyone else left, the link broke, the sims disagree). */
   function netGone(text: string) {
     net.end(false);
     mode = "menu";
@@ -1512,86 +1594,154 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     $(".dh-gone-say").textContent = text;
     say(text);
   }
-  const roomForm = roomC.querySelector("form") as HTMLFormElement, field = (n: string) => roomForm.elements.namedItem(n) as HTMLInputElement;
-  const roomStep = (s: "join" | "wait" | "gone") => {
+  type Step = "pick" | "host" | "join" | "wait" | "gone";
+  const roomStep = (s: Step) => {
     roomC.dataset.step = s;
     for (const el of roomC.querySelectorAll<HTMLElement>("[data-for]")) el.hidden = el.dataset.for !== s;
-    roomC.querySelector<HTMLElement>(`[data-for="${s}"] :is(input, button)`)?.focus({ preventScroll: true });
+    roomC.querySelector<HTMLElement>(`[data-for="${s}"] :is(input, button:not([hidden]))`)?.focus({ preventScroll: true });
   };
-  const roomSay = (t: string) => ($(".dh-say").textContent = t);
-  const showRoom = () => ((roomForm.elements.namedItem("roomShow") as HTMLOutputElement).value = String(net.room));
+  const roomSay = (t: string) => roomC.querySelectorAll(".dh-say").forEach((el) => (el.textContent = t));
+  const field = (n: string) => roomC.querySelector(`[name="${n}"]`) as HTMLInputElement;
+  const showRoom = () => ((field("roomShow") as unknown as HTMLOutputElement).value = String(net.room));
   showRoom();
+  /** This player's name (the room card's field, remembered on the device). */
+  let myName = cleanName(store.get("name") || "");
+  field("who").value = myName;
+  /** A link with a room and a code (the site takes the code out of the address bar first and hands
+   *  it over as window.__duneInvite) drops the player straight into that room, once. */
+  let linkJoin = false;
   {
-    const w = window as unknown as { __duneInvite?: string };
-    field("code").value = qs.get("code") || w.__duneInvite || (() => { try { return sessionStorage.getItem("dune-hop:code") || ""; } catch { return ""; } })();
+    const w = window as unknown as { __duneInvite?: string }, linked = qs.get("code") || w.__duneInvite || "";
+    field("code").value = linked || (() => { try { return sessionStorage.getItem("dune-hop:code") || ""; } catch { return ""; } })();
     delete w.__duneInvite;
+    linkJoin = qs.get("mode") === "online" && qs.has("room") && !!linked;
   }
   function openRoom() {
     mode = "menu";
     showCard(roomC);
-    roomStep("join");
+    roomStep("pick");
+    $(".dh-room-sub").textContent = "UP TO FOUR PHONES, ONE TABLE";
+    $(".dh-share").textContent = "SEND LINK";
     roomSay(ROOMS_URL ? "" : "Online play needs a room server: this build has none set.");
+    if (linkJoin && ROOMS_URL) (linkJoin = false), void pickGo("link");
   }
+  /** Is the code on the list? {ok, players} (the seats a room may have), "slow", or null (no server). */
   async function checkCode(code: string) {
     const r = await fetch(`${ROOMS_URL.replace(/^ws/, "http")}/invite`, { method: "POST", body: code, referrerPolicy: "no-referrer" }).catch(() => null);
     if (!r) return null;
-    if (r.status === 429) return "slow";
-    return r.ok;
+    if (r.status === 429) return "slow" as const;
+    const j = (await r.json().catch(() => ({}))) as { players?: number };
+    return { ok: r.ok, players: Number(j.players) || 2 };
   }
-  roomForm.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
+  /** HOST, JOIN or a join link: the name and the code first. */
+  async function pickGo(how: "host" | "join" | "link") {
     if (!ROOMS_URL) return roomSay("Online play needs a room server: this build has none set.");
+    myName = cleanName(field("who").value);
+    field("who").value = myName;
+    store.set("name", myName);
     const code = field("code").value.trim().toUpperCase();
-    if (code.length < 6) return roomSay("Enter the invite code you were sent.");
+    if (code.length < 6) return roomSay("Enter the invite code you were sent."), field("code").focus();
     roomSay("Checking the code…");
     const ok = await checkCode(code);
     if (ok === null) return roomSay("Can't reach the game server. Check your connection and try again.");
     if (ok === "slow") return roomSay("Too many tries. Wait a minute, then try again.");
-    if (!ok) return roomSay("That invite code isn't on the list.");
+    if (!ok.ok) return roomSay("That invite code isn't on the list.");
     roomSay("");
     net.code = code;
+    net.size = Math.max(2, Math.min(SEATS, ok.players));
     try {
       sessionStorage.setItem("dune-hop:code", code);
     } catch {}
-    enterRoom();
+    if (how === "link") return enterRoom(false, net.size);
+    if (how === "join") return showRoom(), roomStep("join");
+    for (const b of roomC.querySelectorAll<HTMLButtonElement>("[data-size]")) b.hidden = Number(b.dataset.size) > net.size;
+    $(".dh-host-sub").textContent = (pick.mode === "free" ? "A three-minute Freestyle jam" : `${def.name}${pick.rivals ? ", AI rivals in the empty places" : ", no AI rivals"}`) + ". It starts when everyone's in, or when you press START NOW.";
+    roomStep("host");
+  }
+  const pickForm = roomC.querySelector(".dh-room-pick") as HTMLFormElement;
+  pickForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    void pickGo((ev.submitter as HTMLButtonElement | null)?.value === "join" ? "join" : "host");
   }, sig);
+  for (const b of roomC.querySelectorAll<HTMLButtonElement>("[data-size]"))
+    b.addEventListener("click", () => ((net.room = (Math.random() * ROOM_N) | 0), enterRoom(true, Number(b.dataset.size))), sig);
+  (roomC.querySelector('form[data-for="join"]') as HTMLFormElement).addEventListener("submit", (ev) => (ev.preventDefault(), enterRoom(false, net.size)), sig);
   const seatsEl = $(".dh-seats");
-  async function enterRoom() {
+  /** The lobby's seats: who is in (the room only says how many), the open places, the AI's. */
+  function paintSeats(seat: number, seated: number, n: number) {
+    let h = "";
+    for (let i = 0; i < n; i++) {
+      const me = i === seat, inn = i < seated;
+      h += `<li class="${me ? "dh-me" : inn ? "dh-in" : ""}"><i style="background:${P.cars[i]![0]}"></i><b>${me && myName ? myName : "P" + (i + 1)}</b><small>${me ? (seat === 0 ? "YOU · HOST" : "YOU") : inn ? (i === 0 ? "HOST" : "IN") : "OPEN"}</small></li>`;
+    }
+    seatsEl.innerHTML = h;
+  }
+  async function enterRoom(host: boolean, wantN: number) {
     roomStep("wait");
-    $(".dh-room-sub").textContent = `ROOM ${net.room} · WAITING`;
-    seatsEl.innerHTML = `<li class="dh-me">P1 · YOU</li><li>OPEN SEAT</li>`;
-    $(".dh-wait-say").textContent = "Waiting for player 2.";
+    $(".dh-t-code").textContent = net.code;
+    $(".dh-room-sub").textContent = "CONNECTING";
+    $(".dh-wait-say").textContent = host ? "Opening a room…" : `Joining room ${net.room}…`;
+    $(".dh-go").hidden = true;
+    seatsEl.innerHTML = "";
     net.abort = new AbortController();
     const signal = net.abort.signal, mine = packMode(pick.mode === "free", Math.max(0, TRACKS.indexOf(def)), pick.rivals, Math.min(7, o.laps ?? 0));
     for (let tries = 0; ; tries++) {
+      $(".dh-t-room").textContent = "" + net.room;
+      const one = new AbortController(), stop = () => one.abort();
+      signal.addEventListener("abort", stop, { once: true });
+      let busy = false;
       try {
-        const s = await joinRoom(ROOMS_URL, net.room, net.code, mine, signal, (seat, seated) => {
-          seatsEl.innerHTML = [0, 1].map((i) => `<li class="${i === seat ? "dh-me" : i < seated ? "dh-in" : ""}">${i === seat ? `P${i + 1} · YOU` : i < seated ? `P${i + 1}` : "OPEN SEAT"}</li>`).join("");
-          $(".dh-wait-say").textContent = seated < 2 ? "Waiting for player 2." : "Starting…";
-          $(".dh-room-sub").textContent = `ROOM ${net.room} · P${seat + 1} · ${seated} OF 2`;
+        const s = await joinRoom(ROOMS_URL, net.room, net.size, net.code, {
+          want: wantN, mode: mine, signal: one.signal,
+          lobby(seat, seated, n, go) {
+            // HOST wants a room of its own: someone is in this one, so try the next.
+            if (host && seat !== 0) return void ((busy = true), one.abort());
+            net.go = seat === 0 ? go : null;
+            paintSeats(seat, seated, seat === 0 ? Math.min(n, wantN) : n);
+            const left = Math.max(0, (seat === 0 ? wantN : n) - seated);
+            $(".dh-room-sub").textContent = `ROOM ${net.room} · ${seated} OF ${seat === 0 ? Math.min(n, wantN) : n} IN`;
+            $(".dh-wait-say").textContent = seat === 0 ? (left ? `Waiting for ${left} more…` : "Starting…") : "You're in. The host starts the race.";
+            $(".dh-go").hidden = !(seat === 0 && seated > 1 && left > 0);
+          },
         });
+        signal.removeEventListener("abort", stop);
         if (signal.aborted || destroyed) return s.transport.close();
         net.abort = null;
         return net.begin(s);
       } catch {
+        signal.removeEventListener("abort", stop);
         if (signal.aborted || destroyed) return;
-        if (tries >= 2) return roomStep("gone"), ($(".dh-gone-say").textContent = `Room ${net.room} is full or mid-match. Try another room.`);
+        net.go = null;
+        if (host && tries < ROOM_N) {
+          net.room = (net.room + 1) % ROOM_N;
+          if (!busy) await new Promise((r) => setTimeout(r, 300));
+          continue;
+        }
+        if (tries >= 2) return roomStep("gone"), ($(".dh-gone-say").textContent = host ? "Every room is busy right now. Try again in a minute." : `Room ${net.room} is full, mid-race or closed. Check the number with the host.`);
         await new Promise((r) => setTimeout(r, 1200));
       }
     }
   }
   for (const b of roomC.querySelectorAll<HTMLButtonElement>("[data-room]")) b.addEventListener("click", () => ((net.room = (net.room + Number(b.dataset.room) + ROOM_N) % ROOM_N), showRoom()), sig);
   $(".dh-room-back").addEventListener("click", showMenu, sig);
+  for (const b of roomC.querySelectorAll(".dh-room-pickk")) b.addEventListener("click", () => roomStep("pick"), sig);
   $(".dh-room-menu").addEventListener("click", showMenu, sig);
-  $(".dh-room-again").addEventListener("click", () => roomStep("join"), sig);
-  $(".dh-room-cancel").addEventListener("click", () => (net.abort?.abort(), roomStep("join")), sig);
+  $(".dh-room-again").addEventListener("click", () => roomStep("pick"), sig);
+  $(".dh-room-cancel").addEventListener("click", () => (net.abort?.abort(), (net.go = null), roomStep("pick")), sig);
+  $(".dh-go").addEventListener("click", () => net.go?.(), sig);
   $(".dh-share").addEventListener("click", async () => {
     const url = `${location.origin}${location.pathname}?mode=online&room=${net.room}${qs.get("rooms") ? `&rooms=${encodeURIComponent(ROOMS_URL)}` : ""}${net.code ? `&code=${encodeURIComponent(net.code)}` : ""}`, k = $(".dh-share");
     try {
-      if (navigator.share) await navigator.share({ title: "Dune Hop · online", text: `Race me in Dune Hop, room ${net.room}.`, url });
+      if (navigator.share) await navigator.share({ title: "Dune Hop · online", text: `Race me in Dune Hop: room ${net.room}.`, url });
       else await navigator.clipboard.writeText(url), (k.textContent = "LINK COPIED");
-    } catch {
-      k.textContent = "COPY FAILED";
+    } catch (e) {
+      if ((e as Error)?.name === "AbortError") return;
+      try {
+        await navigator.clipboard.writeText(url);
+        k.textContent = "LINK COPIED";
+      } catch {
+        k.textContent = "COPY FAILED";
+      }
     }
   }, sig);
 
@@ -1645,10 +1795,20 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       if (net.on) {
         // Online: presence steps the sim (after this system); the match keeps the engine awake.
         moving = true;
-        const nl = net.link;
-        if (nl && nl.lost) netGone(`P${2 - net.seat} left the match.`);
-        else if (nl && nl.desync >= 0) netGone("The two screens fell out of sync. Start a new match.");
-        else if (nl) showNet(`ONLINE · ROOM ${net.room} · P${net.seat + 1}${nl.away ? " · RECONNECTING" : ""}${!result.hidden && net.peerReady ? " · P" + (2 - net.seat) + " WANTS A REMATCH" : ""}`, nl.away ? "wait" : "live");
+        const nl = net.link, others = ((1 << net.players) - 1) & ~(1 << net.seat);
+        if (nl && nl.link.lost & (1 << net.seat)) netGone("Lost the connection to the room.");
+        else if (nl && (nl.left & others) === others) netGone(net.players > 2 ? "Everyone else left the match." : `${label(31 - Math.clz32(others))} left the match.`);
+        else if (nl && nl.link.desync >= 0) netGone("The screens fell out of sync. Start a new match.");
+        else if (nl) {
+          if (nl.left !== net.leftSeen) {
+            // A seat left: its car drives on (the autopilot, on every screen); say so once.
+            for (let p = 0; p < net.players; p++) if (nl.left & ~net.leftSeen & (1 << p)) toast(0, `${label(p).replace(" · AI", "")} LEFT · AI DRIVES`, "meh"), say(`${label(p).replace(" · AI", "")} left; the AI drives their buggy`);
+            net.leftSeen = nl.left;
+            for (const r of rows) r.dataset.k = "";
+            paintWho();
+          }
+          showNet(netSay(), nl.link.away ? "wait" : "live");
+        }
       } else if (!paused && mode !== "menu") {
         pollPads();
         // Inputs per person: keys and pad (controls), the pointer (P1 alone), a gamepad, or the autopilot.
@@ -1778,7 +1938,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   $(".dh-r-again").addEventListener("click", () => {
     if (!net.on) return startRace(def.id);
     net.ready = true;
-    $(".dh-r-again").textContent = "WAITING FOR P" + (2 - net.seat);
+    $(".dh-r-again").textContent = "WAITING FOR THE OTHERS";
   }, sig);
   $(".dh-r-next").addEventListener("click", () => startRace(TRACKS[(TRACKS.indexOf(def) + 1) % TRACKS.length]!.id), sig);
   $(".dh-r-tracks").addEventListener("click", showMenu, sig);
@@ -1832,7 +1992,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     },
     /** The online link (frame, stalls, desync, lost), or null. */
     get net() {
-      return net.link;
+      return net.link?.link ?? null;
     },
     /** The state for tests and harnesses. */
     getSnapshot() {
@@ -1849,7 +2009,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         score: sim.scs[me]!.S[SC]!, combo: sim.scs[me]!.S[CB]!, nitro: sim.N[me * 2]!, crashed: C[o2 + PH] === CRASH, view: view ? "chase" : "table", speed: v.speed, air: v.air, lapStart: isRace() ? C[o2 + LAPT]! : 0,
         players: sim.humans, split: NV > 1, online: net.on, seat: net.seat, table: isRace() ? -1 : C[o2 + FTABLE]!, transfers: isRace() ? 0 : C[o2 + XFERS]!, best: freeBest,
         cars: Array.from({ length: sim.humans }, (_, i) => car(i)),
-        net: net.link ? { frame: net.link.frame, desync: net.link.desync, stalls: net.link.stalls, lost: net.link.lost } : null,
+        net: net.link ? { frame: net.link.link.frame, desync: net.link.link.desync, stalls: net.link.link.stalls, lost: net.link.link.lost, left: net.link.left, players: net.players, names: net.names.slice(0, net.players) } : null,
         player: { x: sim.pos[me * 3]! * 20, y: sim.pos[me * 3 + 2]! * 20, angle: v.yaw },
         aim: isRace() ? aim() : null,
       };
