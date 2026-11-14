@@ -98,6 +98,50 @@ which give no gas, so that layout brings a GAS key back to the corner with DRIFT
 The race is deterministic and seeded (items, boxes and hits too): the same seed and inputs give the same race, bit for bit
 (the course uses only + − × ÷ and square roots): that is what makes online play work.
 
+## Camera
+
+The camera holds still: your buggy is drawn the same size all race, on a phone and a desktop. Three rules,
+for any game on `@fzlt/core/diorama` (copy them):
+
+1. **A steady chase.** No zoom with speed. `chase` lags behind the buggy (that is its feel), but a lag or a
+   look-ahead along the line of sight reads as a zoom on every change of speed, jump and landing. So the
+   look-ahead leads across the picture only, and after `chase` the target slides along the line of sight
+   to the buggy's depth (in about 80 ms): a dolly with the buggy, never a zoom.
+2. **No refit on a transient resize.** The diorama's focal length is the canvas height ÷ 2 ÷ tan(fov ÷ 2),
+   so a taller canvas (the mobile URL bar hiding) draws everything bigger. The framing is set when a race
+   (or the menu, or a split) begins and its focal is locked; a resize after that only resizes the canvas and
+   opens or closes the fov to keep that focal: more or less of the course shows, at the same scale, and the
+   camera never snaps. Only a width change (a turn of the phone, a window drag) reframes, once it has
+   held for 0.4 s, eased over about a second. The table view holds the same way.
+3. **No browser zoom on the play surface.** `touch-action: none` on the stage (`pan-y` on cards that
+   scroll) stops a double-tap's zoom and a pinch; `lockTouch` from `@fzlt/core/touch` cancels what CSS
+   can't (iOS Safari's gesture events, which ignore `user-scalable=no`, and any two-finger touch), on the
+   stage alone: the rest of the page keeps its pinch-zoom.
+
+```ts
+// 1. after chase(cam, target, o, dt): slide the target along the line of sight to the buggy's depth
+const cp = Math.cos(cam.pitch), ax = Math.sin(cam.yaw) * cp, ay = Math.sin(cam.pitch), az = Math.cos(cam.yaw) * cp;
+const r = (aim[0] - cam.tx) * ax + (aim[1] + o.lift - cam.ty) * ay + (aim[2] - cam.tz) * az, k = 1 - Math.exp(-12 * dt);
+cam.tx += ax * r * k; cam.ty += ay * r * k; cam.tz += az * r * k;
+// (and the look-ahead without its along-sight part: lead = (vel - (vel · a) a) × 0.26 s, added to aim; o.ahead = 0)
+
+// 2. on a resize (ResizeObserver): resize the canvas, then hold the scale
+d.resize(w, h, dpr);
+if (fresh) frame(), (focal = d.height / 2 / Math.tan(FOV / 2)), (width = d.width); // a new race, the menu
+else {
+  cam.fov = 2 * Math.atan(d.height / 2 / focal);                  // same px per unit, no snap
+  if (Math.abs(d.width - width) > 1) reframeAt = time + 0.4;       // a real change: later, eased
+}
+
+// 3. the play surface
+// CSS: .stage{touch-action:none;overscroll-behavior:none} .stage .card{touch-action:pan-y}
+engine.signal.addEventListener("abort", lockTouch(document), { once: true });
+```
+
+`tests/camera.mjs` proves it: a whole race at 390 × 844 with the URL bar shown and hidden eight times
+(and at 1440 × 900 with a window resize): the chase scale stays within ±4%, the focal never changes, and
+a double-tap or a pinch on the course, a HUD key or the pad never zooms the page.
+
 ## As a module
 
 ```js
@@ -131,7 +175,7 @@ npm test              # headless: tracks, a full race on every track, Freestyle 
                       # allocation; BATTLE (every item, every hit recovers, the shield, the draw,
                       # King of the Table) and no crash-out on any landing
 npm run test:settle   # the menu and the hero sleep, the race never does, off screen pauses, Recall
-npm run test:browser  # Chromium at 1440 and 390: keyboard, mouse, touch, pause, a full race, Freestyle,
+npm run test:browser  # Chromium at 1440 and 390: keyboard, mouse, touch, pause, a full race (and the steady camera), Freestyle,
                       # split screen, Recall; tests/battle.mjs: BATTLE (pick up and fire with keys
                       # and touch, hits, the shield, a mine's tumble) and King of the Table; then tests/online.mjs: four pages (two at 1440, two
                       # phones) race online against a stand-in room server (tests/room-server.mjs)
