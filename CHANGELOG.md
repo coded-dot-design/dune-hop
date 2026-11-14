@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Freestyle (RACE / FREESTYLE on the menu): no race, no clock; four large tables side by side
   (Salt Flats, The Bowl, Dune Sea, Neon Yard), each its own look and features, linked by launch
