@@ -72,18 +72,27 @@
 .dh .dh-results li i{width:.9em;height:.9em;border-radius:3px;border:2px solid var(--rim)}
 .dh .dh-hidden,.dh [hidden]{display:none!important}
 .dh .dh-pad{--u:.76px;display:none}
-/* The right thumb's cluster: GAS (96u) in the corner, BRAKE, DRIFT and BOOST (62u) on a 106u arc round
-   it (left, diagonal, up), like a console's face keys: each a short roll of the thumb from GAS. */
+/* The right thumb's cluster, by data-i (0 GAS, 1 BRAKE, 2 DRIFT, 3 BOOST, 4 ITEM): a big key (96u) in
+   the corner and 62u keys on a 106u arc round it (left, diagonal, up), like a console's face keys.
+   STICK (the default): the stick gives gas, so there is no GAS key; DRIFT is the big one in the corner
+   (stick-up gas and a held drift together, one thumb each) and ★ ITEM takes the diagonal. ARROWS: the
+   arrows give no gas, so GAS is the corner key and DRIFT sits on the diagonal next to it, ITEM beyond
+   BRAKE. The left thumb's stick is 158u, its rim 16px clear of the screen's edge. */
+.dh .dh-pad .bui-pad-move{padding:0 0 calc(16px - 14 * var(--u)) calc(16px - 14 * var(--u))}
+.dh .dh-pad .bui-stick{width:calc(158 * var(--u));height:calc(158 * var(--u))}
 .dh .dh-pad .bui-pad-keys{position:relative;display:block;flex:none;width:calc(185 * var(--u));height:calc(185 * var(--u));max-width:none}
 .dh .dh-pad .bui-pad-keys>*{position:absolute;--r:calc(106 * var(--u));--o:calc(17 * var(--u))}
-.dh .dh-pad .bui-pad-keys>:nth-child(1){right:0;bottom:0}
-.dh .dh-pad .bui-pad-keys>:nth-child(2){right:calc(var(--o) + var(--r));bottom:var(--o)}
-.dh .dh-pad .bui-pad-keys>:nth-child(3){right:calc(var(--o) + var(--r) * .7071);bottom:calc(var(--o) + var(--r) * .7071)}
-.dh .dh-pad .bui-pad-keys>:nth-child(4){right:var(--o);bottom:calc(var(--o) + var(--r))}
-.dh .dh-pad .bui-pad-keys>:nth-child(5){right:calc(var(--o) + var(--r) * 1.68);bottom:calc(var(--o) + var(--r) * .5)}
-.dh:not([data-battle]) .dh-pad .bui-pad-keys>:nth-child(5){display:none}
+.dh .dh-pad .bui-pad-keys>[data-i="0"]{right:0;bottom:0}
+.dh .dh-pad .bui-pad-keys>[data-i="1"]{right:calc(var(--o) + var(--r));bottom:var(--o)}
+.dh .dh-pad .bui-pad-keys>[data-i="2"]{right:calc(var(--o) + var(--r) * .7071);bottom:calc(var(--o) + var(--r) * .7071)}
+.dh .dh-pad .bui-pad-keys>[data-i="3"]{right:var(--o);bottom:calc(var(--o) + var(--r))}
+.dh .dh-pad .bui-pad-keys>[data-i="4"]{right:calc(var(--o) + var(--r) * 1.68);bottom:calc(var(--o) + var(--r) * .5)}
+.dh:not([data-steer="arrows"]) .dh-pad .bui-pad-keys>[data-i="0"]{display:none}
+.dh:not([data-steer="arrows"]) .dh-pad .bui-pad-keys>[data-i="2"]{right:0;bottom:0;width:calc(96 * var(--u));height:calc(96 * var(--u))}
+.dh:not([data-steer="arrows"]) .dh-pad .bui-pad-keys>[data-i="4"]{right:calc(var(--o) + var(--r) * .7071);bottom:calc(var(--o) + var(--r) * .7071)}
+.dh:not([data-battle]) .dh-pad .bui-pad-keys>[data-i="4"]{display:none}
 .dh .dh-pad .bui-pad-keys svg{width:calc(28 * var(--u));height:calc(28 * var(--u));stroke-width:2.6}
-.dh .dh-pad .bui-pad-keys .bui-primary svg{width:calc(42 * var(--u));height:calc(42 * var(--u))}
+.dh .dh-pad .bui-pad-keys .bui-primary svg,.dh:not([data-steer="arrows"]) .dh-pad .bui-pad-keys>[data-i="2"] svg{width:calc(42 * var(--u));height:calc(42 * var(--u))}
 @media (pointer:coarse){.dh .dh-pad{display:flex}.dh .dh-hint{display:none}}
 @container stage (max-width:760px){.dh .dh-hud,.dh .dh-vhud{--dh-right:0px;font-size:clamp(11px,2.9cqw,14px)}.dh .dh-board{display:none}.dh .dh-head{right:112px;top:8px;left:8px;gap:6px}.dh .dh-keys{right:8px;top:8px}.dh .dh-k-tracks,.dh .dh-k-view{display:none}.dh .dh-key{min-width:44px;padding:0 .5em}.dh .dh-score,.dh .dh-nitro small{display:none}}
 @media (pointer:coarse){@container stage (aspect-ratio<7/5){.dh canvas,.dh .dh-play{height:calc(100% - clamp(156px,22cqh,164px))}.dh .dh-pad{position:absolute;left:0;right:0;bottom:0;height:clamp(156px,22cqh,164px)}.dh .dh-toast{top:24%}.dh .dh-count{top:30%}.dh .dh-demo{bottom:calc(clamp(156px,22cqh,164px) + 14px)}}}

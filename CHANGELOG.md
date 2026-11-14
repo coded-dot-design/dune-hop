@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Phones: gas and drift at once. The stick gives the gas (push up), so the separate GAS key is gone;
+  DRIFT is now the big key in the corner under the right thumb, ★ ITEM takes DRIFT's old place, and
+  BRAKE and BOOST stay. The stick is a little bigger (120 px at 390 wide, 16 px clear of the edge).
+  STEERING → ARROWS (no gas on the arrows) keeps a GAS key in the corner with DRIFT next to it.
+
 ## 0.2.2
 
 - Online for up to four phones, a view each. ONLINE opens a room card made for a phone: your name,

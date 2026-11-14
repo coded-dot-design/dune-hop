@@ -27,7 +27,7 @@ import { sound } from "@fzlt/core/sound";
 import { effects, type Effects } from "@fzlt/core/fx";
 import { mount as buiMount } from "@fzlt/core/ui";
 import type { Transport } from "@fzlt/core/presence";
-import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, E_RIGHT, E_ITEM, E_FIRE, E_HIT, E_BLOCK, E_BANK, E_STEAL, E_SPILL, STALL, KPOT, KVICT, type Race } from "./race.ts";
+import { createRace, MAX_CARS, IK, K, COUNT, RUN, DONE, CRASH, FIN, PH, NEXT, PI_, IDX, LAP, PLACE, BEST, LAPT, BOOST, DPTS, DTIME, DTOTAL, E_GO, E_GATE, E_LAP, E_LAND, E_CRASH, E_RESPAWN, E_DONE, E_BOOST, E_COUNT, E_WRONG, E_BUMP, E_DRIFT, E_DRIFT_LOST, E_SPIN, E_RIGHT, E_ITEM, E_FIRE, E_HIT, E_BLOCK, E_BANK, E_STEAL, E_SPILL, STALL, KPOT, KVICT, type Race } from "./race.ts";
 import { ITEM_NAMES, IT_BLASTER, IT_OIL, IT_MINE, IT_SHIELD, H_STALL, H_SPIN, BK, BOK, ZK, NBOLT, NHAZ } from "./items.ts";
 import { createFreestyle, E_XFER, E_COMBO, TABLE as FTABLE, XFERS, XPTS, type Freestyle } from "./freestyle.ts";
 import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
@@ -290,8 +290,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   // Touch: two layouts for the left thumb, cycled on the pause card and remembered on the device.
   // "stick" (the default): the analog stick, left/right steers and up/down is gas/brake too (the most
   // of stick and key wins, as in any driving game); "arrows": a left and a right key. Under the right
-  // thumb either way: GAS (the big one, in the corner), BRAKE, DRIFT and BOOST as icon keys in a
-  // cluster. In a split each half has its own pad. Every choice saved by 0.2.0 ("pad") moves to the
+  // thumb, icon keys in a cluster: with the stick (it gives the gas) DRIFT is the big one in the
+  // corner, so stick-up gas and a held drift work together, with ★ ITEM, BRAKE and BOOST round it;
+  // with the arrows GAS is the big one and DRIFT sits next to it (game.css places them). In a split
+  // each half has its own pad. Every choice saved by 0.2.0 ("pad") moves to the
   // stick: its stick never steered there, so nobody chose the arrows over a working one.
   type Steer = "stick" | "arrows";
   const steerKind = (): Steer => (store.get("steer") === "arrows" ? "arrows" : "stick");
@@ -317,7 +319,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function paintPad() {
     stage.dataset.steer = steer;
     const k = padK();
-    if (k) (k.textContent = steer === "stick" ? "STICK" : "◀ ▶ ARROWS"), k.setAttribute("aria-label", `Touch steering: ${steer === "stick" ? "the stick (steer, gas and brake)" : "the arrow keys with GAS and BRAKE"} (tap to switch)`);
+    if (k) (k.textContent = steer === "stick" ? "STICK" : "◀ ▶ ARROWS"), k.setAttribute("aria-label", `Touch steering: ${steer === "stick" ? "the stick (steer, gas and brake) with DRIFT in the corner" : "the arrow keys with GAS in the corner"} (tap to switch)`);
   }
   /** STICK ⇄ ARROWS (fingers on the old control let go; no listener is added). */
   function swapPad() {
@@ -872,7 +874,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   function sharedHud() {
     const R = sim.R, solo = NV === 1 && !net.on;
-    const hint = mode === "race" && solo && (R[0] === COUNT || (!isRace() && R[1]! < 6 && !moved)) ? (thePad.el.offsetParent ? "Stick: steer, push up for gas · or hold GAS · DRIFT into the bends · BOOST when the bar is full" : isRace() ? "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it" : "↑ gas straight off the ramp to jump to the next table · SHIFT drift · SPACE nitro · land flat for the combo") : "";
+    const hint = mode === "race" && solo && (R[0] === COUNT || (!isRace() && R[1]! < 6 && !moved)) ? (thePad.el.offsetParent ? (steer === "stick" ? "Stick: steer, push up for gas · hold DRIFT into the bends · BOOST when the bar is full" : "◀ ▶ steer · hold GAS · DRIFT into the bends · BOOST when the bar is full") : isRace() ? "↑ gas · ← → steer · ↓ brake · SHIFT drift · SPACE nitro · in the air ↑ lifts the nose, ↓ dips it" : "↑ gas straight off the ramp to jump to the next table · SHIFT drift · SPACE nitro · land flat for the combo") : "";
     if (hintEl.textContent !== hint) hintEl.textContent = hint;
     // The demo lap shows only the race (the page's copy sits over it); the menu only its card.
     const hideHead = mode === "menu" || mode === "demo";
@@ -932,7 +934,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     });
     if (!parkEl.childElementCount)
       parkEl.innerHTML = ["SALT FLATS", "THE BOWL", "DUNE SEA", "NEON YARD"].map((n, i) => `<li style="--c:var(--dh-t${i})"><b>${n}</b><small>${["Kicker line, tabletop, whoops, a drift ring", "A deep bowl, a spine, a hip", "Ridged dunes and a banked U-turn", "A rail, stair ledges, a funbox"][i]}</small></li>`).join("");
-    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? `Left thumb: the stick steers (push up for gas, pull down to brake). Right thumb: GAS, BRAKE, DRIFT, BOOST${pick.battle ? ", ★ ITEM" : ""}.` : pick.players === "2" ? `P1: W A S D · left SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""}. P2: arrows · right SHIFT drift · ENTER nitro${pick.battle ? " · right CTRL item" : ""}. Gamepads work too.` : `↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""} · P pause · V view`;
+    $(".dh-menu-keys").textContent = thePad.el.offsetParent ? (steer === "stick" ? `Left thumb: the stick steers (push up for gas, pull down to brake). Right thumb: DRIFT (the big one), BRAKE, BOOST${pick.battle ? ", ★ ITEM" : ""}.` : `Left thumb: ◀ ▶ steer. Right thumb: GAS (the big one), DRIFT, BRAKE, BOOST${pick.battle ? ", ★ ITEM" : ""}.`) : pick.players === "2" ? `P1: W A S D · left SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""}. P2: arrows · right SHIFT drift · ENTER nitro${pick.battle ? " · right CTRL item" : ""}. Gamepads work too.` : `↑ gas · ↓ brake · ← → steer · SHIFT drift · SPACE nitro${pick.battle ? " · F item" : ""} · P pause · V view`;
   }
   function showCard(which: HTMLElement | null) {
     for (const el of [menu, pauseC, result, roomC]) el.hidden = el !== which;
@@ -2241,7 +2243,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     getSnapshot() {
       const R = sim.R, C = sim.C, me = v0.car, v = sim.cars[me]!, o2 = me * K;
       const status = destroyed ? "destroyed" : mode === "menu" ? "idle" : paused ? "paused" : !result.hidden ? (isRace() ? (C[o2 + PLACE] === 1 ? "won" : "gameover") : fs().winner() === me ? "won" : "gameover") : "running";
-      const car = (c0: number) => ({ x: sim.pos[c0 * 3]! * 20, y: sim.pos[c0 * 3 + 2]! * 20, angle: sim.cars[c0]!.yaw, speed: sim.cars[c0]!.speed, score: sim.scs[c0]!.S[SC]!, table: isRace() ? -1 : C[c0 * K + FTABLE]!, transfers: isRace() ? 0 : C[c0 * K + XFERS]!, place: isRace() ? C[c0 * K + PLACE]! : 0, gas: sim.IN[c0 * IK]!, brake: sim.IN[c0 * IK + 1]!, steer: sim.IN[c0 * IK + 2]! });
+      const car = (c0: number) => ({ x: sim.pos[c0 * 3]! * 20, y: sim.pos[c0 * 3 + 2]! * 20, angle: sim.cars[c0]!.yaw, speed: sim.cars[c0]!.speed, score: sim.scs[c0]!.S[SC]!, table: isRace() ? -1 : C[c0 * K + FTABLE]!, transfers: isRace() ? 0 : C[c0 * K + XFERS]!, place: isRace() ? C[c0 * K + PLACE]! : 0, gas: sim.IN[c0 * IK]!, brake: sim.IN[c0 * IK + 1]!, steer: sim.IN[c0 * IK + 2]!, drift: sim.IN[c0 * IK + 4]!, driftPts: C[c0 * K + DPTS]!, driftTotal: C[c0 * K + DTOTAL]! });
       // A point on the racing line about 4 m ahead of your car (race only): what a driver looks at.
       const aim = () => {
         const tr = rc().tr, pi = C[o2 + PI_]!, p = tr.paths[pi]!, i = pi ? Math.min(p.n - 1, C[o2 + IDX]! + 8) : (C[o2 + IDX]! + 8) % p.n;
