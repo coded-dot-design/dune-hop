@@ -155,7 +155,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     actions: [
       { intent: "gas", label: "GAS", name: "Gas (up arrow)", key: "↑", role: "go", hold: true },
       { intent: "brake", label: "BRAKE", name: "Brake (down arrow)", key: "↓", role: "attack", hold: true },
-      { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "aim", hold: true },
+      { intent: "drift", label: "DRIFT", name: "Drift, the handbrake (shift)", key: "⇧", role: "fallin", hold: true },
       { intent: "nitro", label: "BOOST", name: "Nitro boost (space)", key: "␣", role: "sys", hold: true },
     ],
     host: stage,
@@ -360,6 +360,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const was = new Float64Array(12).fill(-1);
   const TABLE = { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 };
   const chaseO = { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false };
+  /** The view: the car its chase camera follows and whose events it calls out (a split screen adds a
+   *  second view on car 1, with its own camera, chase options and HUD). */
+  const VIEW = { car: 0 };
   const CTP = new Float64Array(3), VEL = new Float64Array(3), target = { pos: CTP, yaw: 0, vel: VEL };
   const ro = new ResizeObserver(() => ((V[0] = 1), engine.wake()));
   ro.observe(stage);
@@ -469,7 +472,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function events() {
     const C = race.C;
     for (let k = 0; k < race.n; k++) {
-      const type = race.ev[k * 3]!, car = race.ev[k * 3 + 1]!, val = race.ev[k * 3 + 2]!, p = car * 3, you = car === 0;
+      const type = race.ev[k * 3]!, car = race.ev[k * 3 + 1]!, val = race.ev[k * 3 + 2]!, p = car * 3, you = car === VIEW.car;
       hudDirty = true;
       if (type === E_COUNT) count("" + val), engine.events.emit("count");
       else if (type === E_GO) count("GO!"), engine.events.emit("go"), say("Go");
@@ -740,11 +743,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   /** The chase target: your buggy (clamped to the table's edge when it goes over). */
   function aim(snap: boolean) {
-    const tr = race.tr, v = race.cars[0]!;
-    target.yaw = race.C[PH] === CRASH ? target.yaw : v.yaw;
-    CTP[0] = Math.max(-tr.HX - 1, Math.min(tr.HX + 1, race.pos[0]!));
-    CTP[1] = Math.max(-1, race.pos[1]!);
-    CTP[2] = Math.max(-tr.HZ - 1, Math.min(tr.HZ + 1, race.pos[2]!));
+    const tr = race.tr, c = VIEW.car, v = race.cars[c]!, p = c * 3;
+    target.yaw = race.C[c * K + PH] === CRASH ? target.yaw : v.yaw;
+    CTP[0] = Math.max(-tr.HX - 1, Math.min(tr.HX + 1, race.pos[p]!));
+    CTP[1] = Math.max(-1, race.pos[p + 1]!);
+    CTP[2] = Math.max(-tr.HZ - 1, Math.min(tr.HZ + 1, race.pos[p + 2]!));
     VEL[0] = v.vel[0]!; VEL[2] = v.vel[2]!;
     if (snap) chaseO.snap = true, chase(dio.cam, target, chaseO, 1 / 60), (chaseO.snap = false);
   }
