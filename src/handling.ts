@@ -16,7 +16,7 @@ import { SC as TRIG, sincos } from "./math.ts";
 
 /** Per car in DR: amount (0..1, eased), slide (the sine of the slide angle, signed), ground speed. */
 export const D_AMT = 0, D_ANG = 1, D_SPD = 2, DK = 4;
-const KICK = 2.3, SCRUB = 0.16, MAX_ANG = 0.86, OFS = 0.62, RCAR = 0.66;
+const KICK = 1.7, SCRUB = 0.03, MAX_ANG = 0.62, OFS = 0.62, RCAR = 0.66;
 
 export function handling(cars: Drive[], DS: Float64Array[]) {
   const n = cars.length, DR = new Float64Array(n * DK), H = new Float64Array(8);

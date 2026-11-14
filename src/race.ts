@@ -18,7 +18,7 @@ import { hypot } from "@fzlt/core/steer";
 import { seeded } from "@fzlt/core/kernel";
 import { buildTrack, TRACK_W, type Track, type TrackDef } from "./tracks.ts";
 import { stunt, BUMP, CLEAN, CB, type Stunt } from "./stunt.ts";
-import { handling, D_AMT, D_ANG } from "./handling.ts";
+import { handling, D_AMT, D_ANG, D_SPD } from "./handling.ts";
 import { atan2, sincos, SC as TRIG } from "./math.ts";
 
 export const CARS = 4, MAX_CARS = 6, COUNT = 0, RUN = 1, DONE = 2;
@@ -48,7 +48,7 @@ export const IK = 5;
 
 const CAR_OPTS = {
   kind: "car" as const, wheels: [0.8, -0.78, 0.8, 0.78, -0.74, -0.76, -0.74, 0.76], radius: 0.36, rest: 0.34, travel: 0.3,
-  accel: 9, top: 12, grip: 1.08, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
+  accel: 9, top: 12, grip: 1.08, drift: 0.2, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
   surfaces: [0.92, 1.08, 1.08],
 };
 
@@ -498,9 +498,9 @@ export function createRace(def: TrackDef, seed = 1, ro: RaceOptions = {}) {
   /** Drift points (a person's): the slide's angle × speed while the handbrake is held on the ground,
    *  banked when the slide ends; lost on a crash, a spin or a hit. */
   function driftScore(c: number) {
-    const dt = DT[0]!, o = c * K, a = hd.DR[c * 4 + D_AMT]!, ang = Math.abs(hd.DR[c * 4 + D_ANG]!), sp = DS[c]![8]!;
+    const dt = DT[0]!, o = c * K, a = hd.DR[c * 4 + D_AMT]!, ang = Math.abs(hd.DR[c * 4 + D_ANG]!), sp = hd.DR[c * 4 + D_SPD]!;
     if (a > 0.3 && ang > 0.22 && sp > 4.5 && DS[c]![6]! === 0) {
-      C[o + DPTS] = C[o + DPTS]! + ang * sp * dt * (C[o + OFF] ? 2 : 4);
+      C[o + DPTS] = C[o + DPTS]! + ang * sp * dt * (C[o + OFF] ? 5 : 10);
       C[o + DTIME] = C[o + DTIME]! + dt;
     } else if (C[o + DTIME]! > 0 && (a < 0.15 || ang < 0.12)) {
       const pts = Math.round(C[o + DPTS]!);

@@ -878,29 +878,34 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = P.edge;
-    for (let pi = 0; pi < EDGES.length; pi++) {
-      const E = EDGES[pi]!, n = E.length / 6, closed = pi === 0;
-      for (let side = 0; side < 2; side++) {
-        let w = -1;
-        for (let i = 0; i < (closed ? n : n - 1); i++) {
-          const a = side * n * 3 + i * 3, b = side * n * 3 + ((i + 1) % n) * 3;
-          if (!dio.project(E[a]!, E[a + 1]!, E[a + 2]!, tmp) || tmp[2]! < 0.5 || !dio.project(E[b]!, E[b + 1]!, E[b + 2]!, tmp2) || tmp2[2]! < 0.5) {
-            if (w > 0) ctx.stroke(), (w = -1);
-            continue;
+    // Two passes: a shoulder in the track's colour over the painted faces' saw-toothed edge (the road is
+    // painted per triangle), then the neon line on it.
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass ? P.edge : P.track;
+      const wk = pass ? 0.2 : 0.62;
+      for (let pi = 0; pi < EDGES.length; pi++) {
+        const E = EDGES[pi]!, n = E.length / 6, closed = pi === 0;
+        for (let side = 0; side < 2; side++) {
+          let w = -1;
+          for (let i = 0; i < (closed ? n : n - 1); i++) {
+            const a = side * n * 3 + i * 3, b = side * n * 3 + ((i + 1) % n) * 3;
+            if (!dio.project(E[a]!, E[a + 1]!, E[a + 2]!, tmp) || tmp[2]! < 0.5 || !dio.project(E[b]!, E[b + 1]!, E[b + 2]!, tmp2) || tmp2[2]! < 0.5) {
+              if (w > 0) ctx.stroke(), (w = -1);
+              continue;
+            }
+            // Skip the stretch of a branch's edge inside the loop's track (at the joins).
+            if (pi && race.t.kindAt((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2) === KIND_TRACK && tr.near((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2)[1] === 0 && tr.NR[0]! < TRACK_W / 2 - 0.2) continue;
+            const lw = Math.max(1, Math.round(((f * wk) / tmp[2]!) * 2) / 2);
+            if (lw !== w) {
+              if (w > 0) ctx.stroke();
+              ctx.beginPath();
+              ctx.lineWidth = w = lw;
+              ctx.moveTo(tmp[0]!, tmp[1]!);
+            }
+            ctx.lineTo(tmp2[0]!, tmp2[1]!);
           }
-          // Skip the stretch of a branch's edge inside the loop's track (at the joins).
-          if (pi && race.t.kindAt((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2) === KIND_TRACK && tr.near((E[a]! + E[b]!) / 2, (E[a + 2]! + E[b + 2]!) / 2)[1] === 0 && tr.NR[0]! < TRACK_W / 2 - 0.2) continue;
-          const lw = Math.max(1, Math.round(((f * 0.2) / tmp[2]!) * 2) / 2);
-          if (lw !== w) {
-            if (w > 0) ctx.stroke();
-            ctx.beginPath();
-            ctx.lineWidth = w = lw;
-            ctx.moveTo(tmp[0]!, tmp[1]!);
-          }
-          ctx.lineTo(tmp2[0]!, tmp2[1]!);
+          if (w > 0) ctx.stroke();
         }
-        if (w > 0) ctx.stroke();
       }
     }
   }
