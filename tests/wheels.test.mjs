@@ -7,6 +7,7 @@
 // check fails (the far wheels painted over the body, the bug in 0.2.2), so the test can see it.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { PerformanceObserver } from "node:perf_hooks";
 import { diorama } from "@fzlt/core/diorama";
 const { buildBuggy, wheelLayers, NEAR } = await import("../src/buggy.ts");
 
@@ -110,10 +111,16 @@ test("the check sees the old order (every wheel over the body) as wrong", () => 
   assert.ok(r.wrong > r.checked / 4, `wrong ${r.wrong} of ${r.checked}`);
 });
 
-test("wheelLayers allocates nothing", () => {
+test("wheelLayers allocates nothing (young GCs over 1,000,000 calls)", async () => {
   const { d, b } = scene();
-  for (let i = 0; i < 1000; i++) (b.root.rot[1] = i * 0.01), wheelLayers(d, b);
-  const before = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 200000; i++) (b.root.rot[1] = i * 0.001), (d.cam.yaw = i * 0.0007), wheelLayers(d, b);
-  assert.ok(process.memoryUsage().heapUsed - before < 256 * 1024, "heap grew");
+  const R = b.root.rot;
+  for (let i = 0; i < 20000; i++) (R[1] = i * 0.01), wheelLayers(d, b);
+  let minor = 0;
+  const obs = new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.detail?.kind === 1 || e.kind === 1) minor++; });
+  globalThis.gc?.();
+  obs.observe({ entryTypes: ["gc"] });
+  for (let i = 0; i < 1000000; i++) (R[1] = i * 0.001), (R[0] = (i & 15) * 0.02), wheelLayers(d, b);
+  await new Promise((ok) => setTimeout(ok, 50));
+  obs.disconnect();
+  assert.equal(minor, 0, `young GCs: ${minor}`);
 });
