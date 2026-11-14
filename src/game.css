@@ -124,17 +124,38 @@
 .dh .dh-field{display:grid;gap:.35em;width:min(100%,22em);font-size:.85em;letter-spacing:.08em;text-align:left}
 .dh .dh-field input{font:inherit;font-size:1.15em;min-height:44px;padding:0 .7em;border:2px solid var(--rim);border-radius:9px;background:var(--raised);color:var(--ink);letter-spacing:.06em;text-transform:uppercase}
 .dh .dh-field input:focus-visible{outline:3px solid var(--k-sys);outline-offset:2px}
-.dh .dh-rooms{align-items:center}
+.dh .dh-rooms{display:flex;gap:14px;justify-content:center;align-items:center}
 .dh .dh-rooms output{min-width:2.4em;font-size:1.3em;font-variant-numeric:tabular-nums}
 .dh .dh-rooms .bui-key{min-width:44px;padding:0}
 .dh .dh-say{min-height:1.2em;color:var(--k-attack)}
-.dh .dh-seats{display:flex;gap:8px;margin:0;padding:0;list-style:none}
-.dh .dh-seats li{padding:.45em .8em;border:2px dashed var(--rim);border-radius:9px;color:var(--muted)}
-.dh .dh-seats li.dh-me{border-style:solid;background:var(--k-sys);color:var(--rim)}
-.dh .dh-seats li.dh-in{border-style:solid;background:var(--k-go);color:var(--rim)}
+/* HOST and JOIN: two big keys a thumb can't miss; the host's size; the room ticket (room and code,
+   big enough to read across a table); the seats, two by two, each in its car's colour. */
+.dh .dh-hostjoin{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin:0}
+.dh .dh-hostjoin .bui-key{display:grid;gap:.3em;align-content:center;min-height:104px;padding:.7em .6em;font:inherit;white-space:normal}
+.dh .dh-hostjoin b{font-size:1.9em;letter-spacing:.06em;line-height:1}
+.dh .dh-hostjoin small{font-size:.72em;letter-spacing:.06em;line-height:1.3;font-weight:700;opacity:.85}
+.dh .dh-sizes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;margin:0}
+.dh .dh-sizes .bui-key{min-height:84px;font:inherit;font-size:2.2em;font-variant-numeric:tabular-nums}
+.dh .dh-rooms .bui-key{min-width:64px;min-height:64px;font-size:1.6em}
+.dh .dh-rooms output{min-width:2em;font-size:2.6em}
+.dh .dh-ticket{display:grid;grid-template-columns:auto 1fr;gap:10px;width:100%;margin:0}
+.dh .dh-ticket span{display:grid;gap:.15em;padding:.45em .7em;background:var(--raised);border:2px solid var(--rim);border-radius:10px;text-align:left;min-width:0}
+.dh .dh-ticket small{font-size:.75em;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.dh .dh-ticket b{font-size:max(1.5em,20px);letter-spacing:.05em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.1}
+.dh .dh-t-room{font-size:max(2.3em,38px)!important;text-align:center}
+.dh .dh-seats{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;margin:0;padding:0;list-style:none}
+.dh .dh-seats li{display:grid;grid-template-columns:1.1em 1fr;grid-template-rows:auto auto;column-gap:.55em;align-items:center;padding:.5em .7em;border:2px dashed var(--rim);border-radius:10px;color:var(--muted);text-align:left;min-width:0}
+.dh .dh-seats li i{grid-row:1/3;width:1.1em;height:1.1em;border-radius:4px;border:2px solid var(--rim);opacity:.45}
+.dh .dh-seats li b{font-size:1.1em;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dh .dh-seats li small{font-size:.75em;letter-spacing:.08em;font-weight:700}
+.dh .dh-seats li.dh-me,.dh .dh-seats li.dh-in{border-style:solid;color:var(--ink);background:var(--raised)}
+.dh .dh-seats li.dh-me{background:var(--k-sys);color:var(--rim)}
+.dh .dh-seats li.dh-me i,.dh .dh-seats li.dh-in i{opacity:1}
+.dh[data-online] .dh-who{display:inline-flex}
 .dh .dh-netchip{position:absolute;left:50%;bottom:12px;translate:-50% 0;display:flex;align-items:center;gap:.5em;margin:0;padding:.35em .75em;background:var(--surface);color:var(--ink);border:2px solid var(--rim);border-radius:20px;box-shadow:calc(3px * var(--bui-sx,1)) calc(3px * var(--bui-sy,1)) 0 var(--bui-shadow,#000);font-size:.85em;letter-spacing:.05em;white-space:nowrap;max-width:calc(100% - 24px);overflow:hidden}
 .dh .dh-netchip i{width:.7em;height:.7em;border-radius:50%;background:var(--k-go)}
 .dh .dh-netchip[data-conn=wait] i{background:#ffd166}
 @media (pointer:coarse){.dh .dh-netchip{bottom:auto;top:58px}}
+@container stage (max-width:760px){.dh .dh-netchip[data-quiet]{display:none}}
 /* Freestyle on a narrow stage: the score stays (the time chip, the device's best, goes instead). */
 @container stage (max-width:760px){.dh[data-free] .dh-score{display:inline-flex}.dh[data-free][data-solo] .dh-time{display:none}}

@@ -1,5 +1,5 @@
-// Dune Hop's Freestyle, headless (tests/freestyle.test.mjs plays it with no browser): one or two
-// buggies loose on the park (./park.ts), no race and no clock for one; two people get a timed jam.
+// Dune Hop's Freestyle, headless (tests/freestyle.test.mjs plays it with no browser): one to four
+// buggies loose on the park (./park.ts), no race and no clock for one; more people get a timed jam.
 // Points: air (the airtime, judged on the landing like the race's air scorer: clean or sketchy), a
 // transfer bonus for landing on another table, drift chains (a handbrake slide banked when it ends,
 // ./handling.ts), each times the combo multiplier: every scoring move inside the combo window adds
@@ -28,7 +28,7 @@ const TUMBLE = 1.3, COUNTDOWN = 3, BOOST_T = 0.9, BOOST_A = 12, BOOST_TOP = 15, 
 const COMBO_T = 5, COMBO_MAX = 9, XFER_PTS = 250, FIXED = 1 / 60;
 
 export interface FreestyleOptions {
-  /** People (1 or 2). */
+  /** People (1 to 4: two on a split screen, up to four online). */
   humans?: number;
   /** A timed jam, seconds (0: none; the default is 0 for one person, 180 for two). */
   jam?: number;
@@ -36,7 +36,7 @@ export interface FreestyleOptions {
 
 export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   const park: Park = buildPark(), t = park.t, tables = park.tables;
-  const HUM = Math.max(1, Math.min(2, fo.humans ?? 1)), NC = HUM, JAM = fo.jam ?? (HUM > 1 ? 180 : 0);
+  const HUM = Math.max(1, Math.min(4, fo.humans ?? 1)), NC = HUM, JAM = fo.jam ?? (HUM > 1 ? 180 : 0);
   const cars: Drive[] = [];
   for (let c = 0; c < NC; c++) cars.push(drive(t, { ...CAR_OPTS, surfaces: [0.92, 1.08, 1.02, 1.1, 1.1, 0.9, 1.12], id: c }));
   const DS = cars.map((v) => new Float64Array(v.landing.buffer));
@@ -52,12 +52,12 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
   let nev = 0;
   const emit = (type: number, car: number, val: number) => nev < 24 && ((ev[nev * 3] = type), (ev[nev * 3 + 1] = car), (ev[nev * 3 + 2] = val), nev++);
 
-  /** Car c to its table's start (the second person a little to the side). */
+  /** Car c to its table's start (more people side by side across it). */
   function place(c: number, ti: number) {
     const sp = tables[ti]!.spawn, v = cars[c]!, o = c * K;
     TRIG[2] = sp[2];
     sincos();
-    const side = NC > 1 ? (c ? 1.8 : -1.8) : 0, fx = TRIG[1]!, fz = -TRIG[0]!;
+    const side = NC > 2 ? (c - (NC - 1) / 2) * 1.8 : NC > 1 ? (c ? 1.8 : -1.8) : 0, fx = TRIG[1]!, fz = -TRIG[0]!;
     v.reset(sp[0] - fz * side, sp[1] + fx * side, sp[2]);
     C[o + TABLE] = ti;
     C[o + FROM] = ti;
@@ -77,7 +77,7 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     for (const s of scs) s.reset();
     hd.reset();
     nev = 0;
-    // One person starts on the Salt Flats; two start side by side there too (a jam is one park).
+    // One person starts on the Salt Flats; more start side by side there too (a jam is one park).
     for (let c = 0; c < NC; c++) (C[c * K + HUMAN] = 1), place(c, 0);
   }
 
@@ -359,11 +359,16 @@ export function createFreestyle(seed = 1, fo: FreestyleOptions = {}) {
     R[3] = R[1]!;
     emit(E_DONE, 0, winner() + 1);
   }
-  /** The leader by score (ties: −1). */
+  /** The leader by score (a tie at the top: −1). */
   function winner() {
     if (NC < 2) return 0;
-    const a = scs[0]!.S[SC]!, b = scs[1]!.S[SC]!;
-    return a === b ? -1 : a > b ? 0 : 1;
+    let w = 0, tie = false;
+    for (let c = 1; c < NC; c++) {
+      const a = scs[c]!.S[SC]!, b = scs[w]!.S[SC]!;
+      if (a > b) (w = c), (tie = false);
+      else if (a === b) tie = true;
+    }
+    return tie ? -1 : w;
   }
 
   reset(seed);
