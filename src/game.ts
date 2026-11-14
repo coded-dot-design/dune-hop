@@ -34,7 +34,7 @@ import { TX, TZ, TOP as PARK_TOP } from "./park.ts";
 import { buildBuggy, wheelLayers, type Buggy } from "./buggy.ts";
 import { TRACKS, trackById, TRACK_W, KIND_TRACK, type Path } from "./tracks.ts";
 import { CLEAN, SC, CB, BEST as SBEST, CLEANS, PTS, AIR, TOP } from "./stunt.ts";
-import { encode, decode, packMode, unpackMode, hashOf, joinRoom, lockstep, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, SEATS, NAME, type Lockstep } from "./net.ts";
+import { encode, decode, packMode, unpackMode, joinRoom, rollback, cleanName, nameBits, nameChar, B_AUTO, B_READY, B_ITEM, GONE, SEATS, NAME, type Rollback } from "./net.ts";
 
 const TAU = 6.283185307179586;
 type Sim = Race | Freestyle;
@@ -534,6 +534,11 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   // [0] measure, [1] theme.
   const V = new Float64Array(2);
   V[0] = V[1] = 1;
+  // Online, after a correction: each buggy is drawn where it was and eases to where the sim now says
+  // (OFF, decaying), so a remote car never pops. PRE: the poses just before the state went back.
+  const PRE = new Float64Array(MAX_CARS * 6), OFF = new Float64Array(MAX_CARS * 6);
+  /** OFF's share left after one step (an ease of about 0.1 s). */
+  const EASE = Math.exp(-1 / 60 / 0.1);
   let mode: "menu" | "race" | "demo" = "menu", paused = false, auto = !!o.attract, view = 1, dirty = true, hudDirty = true, flash = -1, flashT = 0, cardAt = -1, pulse = 0, boardT = 0, emitK = 0, newBest = false, destroyed = false;
   /** Per car: the drop-in after a respawn. */
   const DROP = new Float64Array(MAX_CARS);
@@ -556,8 +561,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       }
     for (let k = 0; k < sim.count; k++) {
       const car = v.cars[k]!, dv = sim.cars[k]!, p = k * 3, tum = sim.C[k * K + PH] === CRASH;
-      car.pos[0] = sim.pos[p]!; car.pos[1] = sim.pos[p + 1]!; car.pos[2] = sim.pos[p + 2]!;
-      car.rot[0] = sim.rot[p]!; car.rot[1] = sim.rot[p + 1]!; car.rot[2] = sim.rot[p + 2]!;
+      const q = k * 6;
+      car.pos[0] = sim.pos[p]! + OFF[q]!; car.pos[1] = sim.pos[p + 1]! + OFF[q + 1]!; car.pos[2] = sim.pos[p + 2]! + OFF[q + 2]!;
+      car.rot[0] = sim.rot[p]! + OFF[q + 3]!; car.rot[1] = sim.rot[p + 1]! + OFF[q + 4]!; car.rot[2] = sim.rot[p + 2]! + OFF[q + 5]!;
       if (DROP[k]! > 0) car.pos[1] = car.pos[1]! + DROP[k]! * DROP[k]! * 3;
       for (let i = 0; i < 4; i++) {
         const h = v.hubs[k]![i]!;
@@ -706,33 +712,33 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         dustBurst(sim.pos[p]!, sim.pos[p + 1]! - 0.4, sim.pos[p + 2]!, you ? 12 : 6);
         if (you) engine.events.emit("respawn"), toast(vi, "BACK ON YOUR WHEELS", "go");
       } else if (type === E_ITEM) {
-        seen.item++;
+        if (!net.on) seen.item++;
         if (you) engine.events.emit("item"), toast(vi, `GOT ${ITEM_NAMES[val]} · ${keyName(vi)}`, "boost"), say(`Got a ${ITEM_NAMES[val]!.toLowerCase()}`);
       } else if (type === E_FIRE) {
-        seen.fire++;
+        if (!net.on) seen.fire++;
         engine.events.emit(val === IT_BLASTER ? "blast" : val === IT_SHIELD ? "block" : "drop");
         if (you && val === IT_SHIELD) toast(vi, "SHIELD ON", "go");
       } else if (type === E_HIT) {
         const kind = val >> 3, by = val & 7, bi = viewOf(by);
-        seen.hit++;
+        if (!net.on) seen.hit++;
         engine.events.emit(kind === H_STALL ? "stall" : kind === H_SPIN ? "oil" : "zap");
         blast(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, kind === H_STALL ? 0.55 : kind === H_SPIN ? 0.4 : 1.3);
         burst(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, kind === H_STALL ? 14 : 10, 4);
         if (you) (vw.shake = reduced ? 0 : kind === 3 ? 0.6 : 0.32), kind !== 3 && toast(vi, kind === H_STALL ? `STALLED · ${label(by)}'S BLASTER` : `OILED · ${label(by)}`, "bad"), say(kind === H_STALL ? "Stalled" : kind === H_SPIN ? "Spun out on oil" : "Zapped");
         if (bi >= 0 && by !== car) toast(bi, `HIT ${label(car)}!`, "clean");
       } else if (type === E_BLOCK) {
-        seen.block++;
+        if (!net.on) seen.block++;
         engine.events.emit("block");
         blast(sim.pos[p]!, sim.pos[p + 1]! + 0.4, sim.pos[p + 2]!, 0.3);
         if (you) toast(vi, "SHIELD BLOCKED IT", "go");
         const bi = viewOf(val);
         if (bi >= 0 && val !== car) toast(bi, `${label(car)} BLOCKED IT`, "meh");
       } else if (type === E_BANK) {
-        seen.bank++;
+        if (!net.on) seen.bank++;
         if (you) engine.events.emit("bank"), toast(vi, `BANKED +${num(val)}`, "drift"), say(`Banked ${val}`);
         burst(sim.pos[p]!, sim.pos[p + 1]! + 0.6, sim.pos[p + 2]!, 16, 4);
       } else if (type === E_STEAL) {
-        seen.steal++;
+        if (!net.on) seen.steal++;
         const victim = sim.C[car * K + KVICT]!, ti = viewOf(victim);
         engine.events.emit("steal");
         blast(sim.pos[p]!, sim.pos[p + 1]! + 0.3, sim.pos[p + 2]!, 0.5);
@@ -754,20 +760,60 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         burst(sim.pos[p]!, sim.pos[p + 1]! + 0.3, sim.pos[p + 2]!, you ? 14 : 8, 3);
         if (you) (vw.shake = reduced ? 0 : 0.3), toast(vi, "SPUN OUT", "bad"), say("Spun out");
       } else if (type === E_BUMP && you) engine.events.emit("bump"), (vw.shake = reduced ? 0 : Math.max(vw.shake, 0.18));
-      else if (type === E_DONE) {
-        if (mode === "demo") continue;
-        const won = race ? C[v0.car * K + PLACE] === 1 : fs().winner() === v0.car;
-        engine.events.emit(won ? "win" : "lose");
-        burst(sim.pos[v0.car * 3]!, sim.pos[v0.car * 3 + 1]! + 1, sim.pos[v0.car * 3 + 2]!, 30, 4);
-        cardAt = engine.time + 1.2;
-        engine.busy(1.4);
-        say(race ? `Finished ${ordinal(C[v0.car * K + PLACE]!)}` : "Time");
-      }
+      else if (type === E_DONE && !net.on) finished();
     }
     sim.clear();
   }
-  /** BATTLE events seen (tests, harnesses). */
+  /** The race (or the jam) is over: the result card comes up. Online, on the final frame that ends it. */
+  function finished() {
+    if (mode === "demo") return;
+    const race = isRace() ? rc() : null, C = sim.C;
+    const won = race ? C[v0.car * K + PLACE] === 1 : fs().winner() === v0.car;
+    engine.events.emit(won ? "win" : "lose");
+    burst(sim.pos[v0.car * 3]!, sim.pos[v0.car * 3 + 1]! + 1, sim.pos[v0.car * 3 + 2]!, 30, 4);
+    cardAt = engine.time + 1.2;
+    engine.busy(1.4);
+    say(race ? `Finished ${ordinal(C[v0.car * K + PLACE]!)}` : "Time");
+  }
+  /** BATTLE events seen (tests, harnesses): online, counted on final frames (a frame run again after a
+   *  correction never counts twice). */
   const seen = { item: 0, fire: 0, hit: 0, block: 0, bank: 0, steal: 0 };
+  // Online, per frame (the last time it ran): its BATTLE events and whether it ended the match, read
+  // back when the frame is final.
+  const TK = 7, TAL = new Int32Array(128 * TK);
+  function tally(f: number) {
+    const q = (f & 127) * TK;
+    for (let k = 0; k < sim.n; k++) {
+      const t = sim.ev[k * 3]!;
+      if (t === E_ITEM) TAL[q] = TAL[q]! + 1;
+      else if (t === E_FIRE) TAL[q + 1] = TAL[q + 1]! + 1;
+      else if (t === E_HIT) TAL[q + 2] = TAL[q + 2]! + 1;
+      else if (t === E_BLOCK) TAL[q + 3] = TAL[q + 3]! + 1;
+      else if (t === E_BANK) TAL[q + 4] = TAL[q + 4]! + 1;
+      else if (t === E_STEAL) TAL[q + 5] = TAL[q + 5]! + 1;
+      else if (t === E_DONE) TAL[q + 6] = TAL[q + 6]! + 1;
+    }
+  }
+  function smooth(before: boolean) {
+    for (let k = 0; k < sim.count; k++) {
+      const q = k * 6, p = k * 3;
+      if (before) {
+        for (let i = 0; i < 3; i++) (PRE[q + i] = sim.pos[p + i]!), (PRE[q + 3 + i] = sim.rot[p + i]!);
+        continue;
+      }
+      let far = 0;
+      for (let i = 0; i < 3; i++) {
+        const dp = PRE[q + i]! - sim.pos[p + i]!;
+        let da = PRE[q + 3 + i]! - sim.rot[p + i]!;
+        da -= 6.283185307179586 * Math.floor(da / 6.283185307179586 + 0.5);
+        OFF[q + i] = OFF[q + i]! + dp;
+        OFF[q + 3 + i] = OFF[q + 3 + i]! + da;
+        far += dp * dp;
+      }
+      // A jump this big is a respawn or a hard hit the guess missed: show it as it is.
+      if (far > 9) OFF.fill(0, q, q + 6);
+    }
+  }
   /** The item key's name for view vi's player. */
   const keyName = (vi: number) => (thePad.el.offsetParent ? "TAP ★" : NV > 1 ? (vi ? "RIGHT CTRL" : "F") : "F");
   const ordinal = (n: number) => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
@@ -1669,7 +1715,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     /** Seats seen leaving (bits): each gets a toast once. */
     leftSeen: 0,
     pick: { mode: "race" as "race" | "free", track: 0, rivals: 0, laps: 0, battle: false },
-    link: null as Lockstep | null,
+    link: null as Rollback | null,
     abort: null as AbortController | null,
     room: Math.min(ROOM_N - 1, Math.max(0, Number(qs.get("room")) | 0)),
     code: "",
@@ -1677,8 +1723,6 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     size: SEATS,
     /** The players' names as they arrived (one character a frame, the first frames of the match). */
     names: NONE.slice(),
-    /** Name characters sent so far. */
-    sent: 0,
     /** The host's "start with the seats taken", while it waits in the lobby. */
     go: null as (() => void) | null,
     /** Start the match on this seat: the same sim on every screen, stepped in lockstep. */
@@ -1690,7 +1734,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       net.seed = s.seed >>> 0;
       net.round = 0;
       net.ready = false;
-      net.readyBits = net.leftSeen = net.sent = 0;
+      net.readyBits = net.leftSeen = 0;
       net.names = NONE.slice();
       net.go = null;
       net.pick = { mode: m.free ? "free" : "race", track: m.track, rivals: m.rivals, laps: m.laps, battle: m.battle };
@@ -1698,28 +1742,43 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       want.humans = -1;
       auto = false;
       startRace(TRACKS[m.track]!.id, net.seed);
-      net.link = lockstep(engine, {
-        transport: s.transport, slot: s.slot, players: net.players,
-        input: () => {
+      PRE.fill(0);
+      OFF.fill(0);
+      net.link = rollback(engine, {
+        transport: s.transport, slot: s.slot, players: net.players, gone: GONE, bytes: sim.bytes,
+        // This screen's input for frame f (a frame or so ahead); the name rides the first frames.
+        input: (f) => {
           if (paused || !result.hidden || mode !== "race") readNone();
           else pollPads(), readInput(0);
-          const nm = net.sent < NAME ? nameBits(myName, net.sent++) : 0;
-          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0) | (I[5] ? B_ITEM : 0) | nm);
+          return encode(I[0]!, I[1]!, I[2]!, I[3]!, I[4]!, (auto ? B_AUTO : 0) | (net.ready ? B_READY : 0) | (I[5] ? B_ITEM : 0) | (f < NAME ? nameBits(myName, f) : 0));
         },
-        step: (inputs, f) => {
+        // One frame, the first time (live: its stickers, sound and FX play) or again after a correction.
+        step: (inputs, f, live, sure) => {
           let rb = 0;
+          TAL.fill(0, (f & 127) * TK, (f & 127) * TK + TK);
           for (let p = 0; p < net.players; p++) {
             decode(inputs[p]!, p, sim.IN, sim.AUTO);
             if (inputs[p]! & B_READY) rb |= 1 << p;
           }
-          if (f >= 2 && f < 2 + NAME) takeNames(inputs, f - 2);
-          net.readyBits = rb;
-          // A rematch: every seat READY in the same frame (so on the same frame on every screen).
-          if (sim.R[0] === DONE && rb === (1 << net.players) - 1) return net.rematch();
+          // A rematch: every seat READY in the same final frame (so on the same frame on every screen).
+          if (sim.R[0] === DONE && rb === (1 << net.players) - 1) {
+            if (!sure) return false;
+            return void net.rematch();
+          }
           sim.step(1 / 60);
-          if (sim.n) events();
+          if (sim.n) tally(f), live ? events() : sim.clear();
         },
-        hash: () => hashOf(sim.bytes),
+        // A final frame (every screen agrees on it): names, rematch asks, the BATTLE counts, the flag.
+        confirm: (inputs, f) => {
+          let rb = 0;
+          for (let p = 0; p < net.players; p++) if (inputs[p]! & B_READY) rb |= 1 << p;
+          net.readyBits = rb;
+          if (f < NAME) takeNames(inputs, f);
+          const q = (f & 127) * TK;
+          (seen.item += TAL[q]!), (seen.fire += TAL[q + 1]!), (seen.hit += TAL[q + 2]!), (seen.block += TAL[q + 3]!), (seen.bank += TAL[q + 4]!), (seen.steal += TAL[q + 5]!);
+          if (TAL[q + 6]) finished();
+        },
+        rewind: smooth,
       });
       showNet(netSay(), "live");
     },
@@ -1778,10 +1837,10 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   }
   const quietSay = () => `ONLINE · ROOM ${net.room} · ${label(net.seat)}`;
   const netSay = () => {
-    const nl = net.link, away = nl ? nl.link.away & ~(1 << net.seat) : 0, others = (1 << net.players) - 1;
+    const nl = net.link, away = nl ? nl.away & ~(1 << net.seat) : 0, others = (1 << net.players) - 1;
     let t = quietSay();
     for (let p = 0; p < net.players; p++) if (away & (1 << p)) t += ` · ${label(p)} RECONNECTING`;
-    if (nl && nl.link.away & (1 << net.seat)) t += " · RECONNECTING";
+    if (nl && nl.away & (1 << net.seat)) t += " · RECONNECTING";
     if (!result.hidden && net.readyBits && net.readyBits !== others) t += ` · REMATCH ${popcount(net.readyBits)} OF ${net.players}`;
     return t;
   };
@@ -2008,10 +2067,12 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       if (net.on) {
         // Online: presence steps the sim (after this system); the match keeps the engine awake.
         moving = true;
+        // Corrections ease out (about 0.1 s).
+        for (let i = 0; i < sim.count * 6; i++) OFF[i] = Math.abs(OFF[i]!) < 1e-4 ? 0 : OFF[i]! * EASE;
         const nl = net.link, others = ((1 << net.players) - 1) & ~(1 << net.seat);
-        if (nl && nl.link.lost & (1 << net.seat)) netGone("Lost the connection to the room.");
+        if (nl && nl.lost & (1 << net.seat)) netGone("Lost the connection to the room.");
         else if (nl && (nl.left & others) === others) netGone(net.players > 2 ? "Everyone else left the match." : `${label(31 - Math.clz32(others))} left the match.`);
-        else if (nl && nl.link.desync >= 0) netGone("The screens fell out of sync. Start a new match.");
+        else if (nl && nl.desync >= 0) netGone("The screens fell out of sync. Start a new match.");
         else if (nl) {
           if (nl.left !== net.leftSeen) {
             // A seat left: its car drives on (the autopilot, on every screen); say so once.
@@ -2020,7 +2081,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
             for (const r of rows) r.dataset.k = "";
             paintWho();
           }
-          showNet(netSay(), nl.link.away ? "wait" : "live");
+          showNet(netSay(), nl.away ? "wait" : "live");
         }
       } else if (!paused && mode !== "menu") {
         pollPads();
@@ -2206,9 +2267,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       auto = on;
       engine.wake();
     },
-    /** The online link (frame, stalls, desync, lost), or null. */
+    /** The online link (frame, final, stalls, corrections, desync, lost), or null. */
     get net() {
-      return net.link?.link ?? null;
+      return net.link;
     },
     /** The state for tests and harnesses. */
     getSnapshot() {
@@ -2225,7 +2286,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         score: sim.scs[me]!.S[SC]!, combo: sim.scs[me]!.S[CB]!, nitro: sim.N[me * 2]!, crashed: C[o2 + PH] === CRASH, view: view ? "chase" : "table", speed: v.speed, air: v.air, lapStart: isRace() ? C[o2 + LAPT]! : 0,
         players: sim.humans, split: NV > 1, online: net.on, seat: net.seat, table: isRace() ? -1 : C[o2 + FTABLE]!, transfers: isRace() ? 0 : C[o2 + XFERS]!, best: freeBest,
         cars: Array.from({ length: sim.humans }, (_, i) => car(i)),
-        net: net.link ? { frame: net.link.link.frame, desync: net.link.link.desync, stalls: net.link.link.stalls, lost: net.link.link.lost, left: net.link.left, players: net.players, names: net.names.slice(0, net.players) } : null,
+        net: net.link ? { frame: net.link.final, live: net.link.frame, desync: net.link.desync, stalls: net.link.stalls, corrections: net.link.corrections, delay: net.link.delay, lost: net.link.lost, left: net.link.left, players: net.players, names: net.names.slice(0, net.players) } : null,
         player: { x: sim.pos[me * 3]! * 20, y: sim.pos[me * 3 + 2]! * 20, angle: v.yaw },
         aim: isRace() ? aim() : null,
         battle: sim.battle ? { seen: { ...seen }, held: Array.from({ length: sim.count }, (_, c) => sim.items.held(c)), shield: Array.from({ length: sim.count }, (_, c) => sim.items.shield(c) > 0), spin: Array.from({ length: sim.count }, (_, c) => C[c * K + 24]! > 0), stall: Array.from({ length: sim.count }, (_, c) => C[c * K + STALL]! > 0), fx: views.map((v) => v.fx.live) } : null,

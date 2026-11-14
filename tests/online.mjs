@@ -10,7 +10,11 @@
 // ready); then two more leave, and the last screen says so, ends the match and settles. Then a room of
 // three for a Freestyle jam starts early on START NOW with two in, and a leaver ends it. Every room
 // card key is 44 px or more and the ticket (room, code) is big on a phone. Waits on state, never on
-// time. DH_VIDEO=<dir> records each window (scripts/online-video.mjs tiles them).
+// time. Every seat is on a phone's network (the room server's latency shim: 60–150 ms round trips,
+// ± 30 ms jitter, a 300 ms spike every few seconds): A (1440) and B (390) drive by keys for a while and
+// each screen measures its own key → screen time and every frame the race didn't move (it never waits:
+// the rollback runs each frame on a guess). DH_VIDEO=<dir> records each window (scripts/online-video.mjs
+// tiles them).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
@@ -19,7 +23,8 @@ import { CODE, roomServer } from "./room-server.mjs";
 
 const fixture = readFileSync("tests/fixtures/page.html", "utf8");
 const page = (laps) => fixture.replace("</body>", `<script type="module">import { createDuneHop } from "/dist/dune-hop.mjs"; window.game = createDuneHop({ host: document.getElementById("board"), keyboard: "page", laps: ${laps} });</script></body>`);
-const site = await serve(".", { "/": page(1), "/guest": page(0) }), rooms = await roomServer({ max: 4 });
+const LAG = { rtt: [60, 150, 100, 120], jitter: 30, spike: 300, spikeEvery: 5000, seed: 3 };
+const site = await serve(".", { "/": page(1), "/guest": page(0) }), rooms = await roomServer({ max: 4, lag: LAG });
 const browser = await chromium.launch(launchOptions());
 const errors = [], t0 = Date.now(), VIDEO = process.env.DH_VIDEO;
 const until = (p, fn, arg, what, timeout = 30000) => p.waitForFunction(fn, arg, { timeout, polling: 100 }).catch(() => assert.fail(`${what}: timed out`));
@@ -105,6 +110,51 @@ try {
   await until(C, (sr) => eval(sr).querySelector(".dh-who").textContent === "CY", sr, "each screen's chip says whose buggy it is");
   console.log(`✓ room ${room} full: four in the match on the host's pick, names ${names[0].map((n, i) => n || "P" + (i + 1)).join(" / ")} on every screen (${ms()})`);
 
+  // A (a desktop) and B (a phone) drive by keys through the start (C and D on the autopilot): each
+  // screen times its own key → the first frame its buggy's steer shows it, and counts the frames of
+  // the race that didn't move (60 Hz frames with no new sim frame) and the corrections.
+  for (const p of [C, D]) await p.evaluate(() => (game.auto = true));
+  await Promise.all(all.map((p) => until(p, () => game.getSnapshot().phase === "race", null, "the race starts", 60000)));
+  const watch = (p) => p.evaluate(() => {
+    const w = (window.__w = { lat: [], frames: 0, still: 0, worst: 0, run: 0, t: -1, want: 0, last: game.net.frame, c0: game.net.corrections, s0: game.net.stalls });
+    addEventListener("keydown", (e) => (e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && ((w.t = performance.now()), (w.want = e.code === "ArrowLeft" ? -1 : 1)), true);
+    const me = game.getSnapshot().seat;
+    const tick = () => {
+      if (!game.net) return;
+      const f = game.net.frame, s = game.getSnapshot();
+      w.frames++;
+      if (f === w.last) (w.still++, w.run++, (w.worst = Math.max(w.worst, w.run)));
+      else w.run = 0;
+      w.last = f;
+      if (w.t >= 0 && Math.sign(s.cars[me].steer) === w.want) w.lat.push(performance.now() - w.t), (w.t = -1);
+      if (!w.done) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const drivers = [A, B];
+  await Promise.all(drivers.map(watch));
+  await Promise.all(drivers.map((p) => p.keyboard.down("ArrowUp")));
+  for (let i = 0; i < 16; i++) {
+    const k = i % 2 ? "ArrowRight" : "ArrowLeft";
+    await Promise.all(drivers.map((p) => p.keyboard.down(k)));
+    await Promise.all(drivers.map((p) => p.waitForFunction(() => window.__w.t < 0, null, { timeout: 5000, polling: "raf" }).catch(() => 0)));
+    await Promise.all(drivers.map((p) => p.waitForTimeout(150 + (i % 3) * 60)));
+    await Promise.all(drivers.map((p) => p.keyboard.up(k)));
+  }
+  await Promise.all(drivers.map((p) => p.keyboard.up("ArrowUp")));
+  const feel = await Promise.all(drivers.map((p) => p.evaluate(() => {
+    const w = window.__w, l = w.lat.slice().sort((a, b) => a - b);
+    w.done = true;
+    return { keys: l.length, p50: Math.round(l[l.length >> 1]), p90: Math.round(l[Math.floor(l.length * 0.9)]), max: Math.round(l[l.length - 1]), frames: w.frames, still: w.still, worst: w.worst, corrections: game.net.corrections - w.c0, stalls: game.net.stalls - w.s0, delay: game.net.delay };
+  })));
+  for (const [i, f] of feel.entries()) {
+    // (The tail is the host's too: four software-rendered Chromium pages share this machine; p50 is the feel.)
+    assert.ok(f.keys >= 12 && f.p50 <= 60 && f.p90 <= 120, `${"AB"[i]}: key → screen ${JSON.stringify(f)}`);
+    assert.ok(f.stalls === 0 && f.worst <= 3, `${"AB"[i]}: the race never waited: ${JSON.stringify(f)}`);
+  }
+  assert.ok(feel.some((f) => f.corrections > 0), `late inputs were corrected: ${JSON.stringify(feel)}`);
+  console.log(`✓ on phone links (RTT ${LAG.rtt.join("/")} ms ± ${LAG.jitter}, ${LAG.spike} ms spikes) the own buggy answers at once: key → screen p50 ${feel.map((f) => f.p50).join(" / ")} ms (p90 ${feel.map((f) => f.p90).join(" / ")}, max ${feel.map((f) => f.max).join(" / ")}), delay ${feel.map((f) => f.delay).join("/")} frames; ${feel.map((f) => f.still).join(" / ")} of ${feel.map((f) => f.frames).join(" / ")} frames without a new race frame (longest run ${feel.map((f) => f.worst).join("/")}), 0 stalls, ${feel.map((f) => f.corrections).join(" / ")} corrections (A 1440, B 390) (${ms()})`);
+
   // All four on the autopilot; D closes its tab once the race is on.
   for (const p of all) await p.evaluate(() => (game.auto = true));
   await until(A, () => game.getSnapshot().phase === "race" && game.getSnapshot().elapsed > 6, null, "the race is on", 60000);
@@ -127,7 +177,7 @@ try {
   const heads = await Promise.all(stay.map((p) => text(p, ".dh-r-head")));
   const winners = heads.map((h, i) => (h.startsWith("YOU WIN") ? names[0][i] || "P" + (i + 1) : h.replace(/ WINS.*$/, "")));
   assert.ok(winners.every((w) => w === winners[0]), `one winner on every screen: ${heads.join(" / ")}`);
-  console.log(`✓ the race finished in lockstep: ${heads.join(" / ")}; places ${s1[0].cars.map((c) => c.place).join(",")} agree; no desync (${s1[0].net.frame} frames, ${ms()})`);
+  console.log(`✓ the race finished in step: ${heads.join(" / ")}; places ${s1[0].cars.map((c) => c.place).join(",")} agree; no desync (${s1[0].net.frame} frames, ${ms()})`);
 
   // Rematch: the three ask (the leaver's seat counts as ready); a new race starts on all three.
   for (const p of stay) await click(p, ".dh-r-again");

@@ -1,15 +1,16 @@
 // Dune Hop online: two to four screens, one race (or one jam), over a fizlet-rooms room
-// (@fzlt/core/presence: `join` for the room and its lobby, the same room server Salvo Bay and
-// Battlefield Blitz use, and `presence` for lockstep). The sim is deterministic, so only inputs travel:
-// each frame every seat's five inputs packed in 32 bits, sent two frames ahead; a missing input stalls
-// the sim, never guesses; every 30 frames each screen's state hash is compared (a desync shows, it
-// never drifts silently). The host (seat 0) picks the mode, the track, the rivals and the laps: they
-// ride on the room's START to everyone as one byte. A rematch is every READY bit seen in the same
-// frame, so all screens start it on the same frame. A seat that leaves (the room says LEAVE once it
-// has relayed that seat's last input, so every screen saw the same last frame) is driven by the
-// autopilot from the next frame on, the same on every screen: the match goes on.
-import { join, hash32, presence, INPUT, LEAVE, type Transport } from "@fzlt/core/presence";
-import type { Engine } from "@fzlt/core/kernel";
+// (@fzlt/core/presence's `join` for the room and its lobby, the same room server Salvo Bay and
+// Battlefield Blitz use). The sim is deterministic, so only inputs travel: each frame every seat's
+// inputs packed in 32 bits. ./rollback.ts runs each frame at once with this screen's own input (1 to 3
+// frames ahead) and a guess for the others' (their last); a real input that differs takes the sim
+// back to that frame and runs it again, so the screens end on the same state while everyone's own
+// buggy answers at once. Every 30 final frames each screen's state hash is compared (a desync shows,
+// it never drifts silently). The host (seat 0) picks the mode, the track, the rivals and the laps:
+// they ride on the room's START to everyone as one byte. A rematch is every READY bit in the same
+// final frame, so all screens start it on the same frame. A seat that leaves (the room says LEAVE
+// once it has relayed that seat's last input, so every screen saw the same last frame) plays GONE
+// (the autopilot) from the next frame on, the same on every screen: the match goes on.
+import { join, hash32 } from "@fzlt/core/presence";
 
 /** Input bits: throttle 0..15 (bits 0–3), brake 0..15 (4–7), steer 1..255 (8–15, 128 straight),
  *  nitro (16), drift 0..15 (17–20), the autopilot (21), ready for a rematch (22), the seat left (23),
@@ -64,70 +65,10 @@ export function hashOf(bytes: Uint8Array[]) {
   return h >>> 0;
 }
 
-const u32 = (d: Uint8Array, i: number) => (d[i]! | (d[i + 1]! << 8) | (d[i + 2]! << 16) | (d[i + 3]! << 24)) >>> 0;
-
-/** Lockstep for `players` seats on engine `e` (presence), where a seat that leaves doesn't stop the
- *  match: from the frame after the last input it sent (every screen got the same ones: the room
- *  relays a seat's inputs in order and its LEAVE after them), its input is `gone` (the autopilot) on
- *  every screen. `left` is the bitmask of seats that left; `lost` (presence's) has this seat's bit
- *  too when this screen's own link closed. */
-export function lockstep(
-  e: Engine,
-  o: { transport: Transport; slot: number; players: number; input(): number; step(inputs: Uint32Array, frame: number): void; hash(): number; gone?: number; delay?: number },
-) {
-  const P = o.players, D = o.delay ?? 2, gone = (o.gone ?? B_GONE | B_AUTO | B_READY) >>> 0;
-  // Per seat: the last input frame seen (D − 1: presence fills frames 0..D−1 itself), the frame its
-  // autopilot starts (−1: still here), the next synthetic frame to feed.
-  const last = new Int32Array(P).fill(D - 1), from = new Int32Array(P).fill(-1), next = new Int32Array(P), out = new Uint8Array(12);
-  let left = 0, fn: ((d: Uint8Array) => void) | null = null;
-  const watch = (d: Uint8Array) => {
-    const s = d[1]!;
-    if (d.length >= 12 && s < P && s !== o.slot) {
-      if (d[0] === INPUT) last[s] = Math.max(last[s]!, u32(d, 4) | 0);
-      else if (d[0] === LEAVE && from[s]! < 0) (from[s] = last[s]! + 1), (next[s] = from[s]!), (left |= 1 << s);
-    }
-    fn?.(d);
-  };
-  const t: Transport = {
-    send: (d) => o.transport.send(d),
-    listen: (f) => ((fn = f), o.transport.listen(f ? watch : null)),
-    close: () => o.transport.close(),
-  };
-  const link = presence(e, { transport: t, slot: o.slot, players: P, delay: D, input: o.input, step: (_e, inputs, f) => o.step(inputs, f), hash: o.hash });
-  // After presence's own step: feed each gone seat's input a few frames ahead, as if it had sent it.
-  out[0] = INPUT;
-  out[8] = gone & 255, out[9] = (gone >>> 8) & 255, out[10] = (gone >>> 16) & 255, out[11] = gone >>> 24;
-  const feed = {
-    step() {
-      if (!left || !fn) return;
-      const F = link.frame;
-      for (let s = 0; s < P; s++) {
-        if (from[s]! < 0) continue;
-        out[1] = s;
-        for (let f = Math.max(next[s]!, F); f < F + D * 2 + 2; f++) {
-          out[4] = f & 255, out[5] = (f >>> 8) & 255, out[6] = (f >>> 16) & 255, out[7] = f >>> 24;
-          fn(out);
-          next[s] = f + 1;
-        }
-      }
-    },
-  };
-  e.add(feed);
-  return {
-    link,
-    /** Seats that left (their cars on the autopilot since). */
-    get left() {
-      return left;
-    },
-    /** The frame seat s's autopilot took over, or −1. */
-    leftAt: (s: number) => from[s] ?? -1,
-    destroy() {
-      e.remove(feed);
-      link.destroy();
-    },
-  };
-}
-export type Lockstep = ReturnType<typeof lockstep>;
+/** A seat that left plays these bits from the frame after its last input (every screen the same):
+ *  the autopilot, ready for a rematch. */
+export const GONE = (B_GONE | B_AUTO | B_READY) >>> 0;
+export { rollback, type Rollback } from "./rollback.ts";
 
 /** The room: `url` (wss://…), room `room`, `size` seats (every screen asks the same size: the room
  *  refuses a different one), an invite code. `want` seats start it (the host's ask: 0 waits for the
