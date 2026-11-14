@@ -23,7 +23,11 @@ export interface Buggy {
   hubs: DioramaObject[];
   /** Per wheel, its parts (tyre, hub cap, axle stub, suspension arm). */
   parts: DioramaObject[][];
+  /** Per wheel, the suspension arm's pivot under the tub: `poseArm` swings it down to the hub. */
+  arms: DioramaObject[];
 }
+/** Suspension arms (long travel): the pivot under the tub (height, distance in from the centre line), the arm's length. */
+export const ARM_Y = -0.27, ARM_IN = 0.28, ARM_L = 0.36;
 /** The body's layer (the root is 4; what rests on it, 5); a near wheel's tyre draws on NEAR, a far one's on FAR. */
 export const BODY = 5, NEAR = 6, FAR = 4.5;
 /** Per wheel part (tyre, hub cap, axle stub, arm), its layer on the near side and on the far side. Near:
@@ -58,7 +62,7 @@ export function buildBuggy(d: Diorama, id: string, c: BuggyPaint, wheels: ArrayL
   part([0.12, 0.09, 0.62], [0.16, 0.8, 0], c.lamp, { emissive: true });
   for (const z of [-0.28, 0.28]) part([0.04, 0.07, 0.16], [1.1, -0.1, z], c.lamp, { emissive: true });
   const tails = [part([0.05, 0.08, 0.16], [-1.09, 0.06, -0.24], c.tail, { emissive: true }), part([0.05, 0.08, 0.16], [-1.09, 0.06, 0.24], c.tail, { emissive: true })];
-  const hubs: DioramaObject[] = [], parts: DioramaObject[][] = [];
+  const hubs: DioramaObject[] = [], parts: DioramaObject[][] = [], arms: DioramaObject[] = [];
   for (let i = 0; i < 4; i++) {
     const hid = id + "h" + i, side = wheels[i * 2 + 1]! > 0 ? 1 : -1;
     const hub = d.add({ id: hid, shape: "group", size: [0.6, 0, 0.6], pos: [wheels[i * 2]!, 0, wheels[i * 2 + 1]!], on: id, layer: BODY });
@@ -66,12 +70,15 @@ export function buildBuggy(d: Diorama, id: string, c: BuggyPaint, wheels: ArrayL
       d.add({ shape: "cyl", sides: 14, size: [0.74, 0.32, 0.74], pos: [0, 0, -0.16], rot: [Math.PI / 2, 0, 0], on: hid, color: c.tyre, layer: NEAR, pick: false }),
       d.add({ shape: "cyl", sides: 8, size: [0.42, 0.05, 0.42], pos: [0, 0, side > 0 ? 0.16 : -0.21], rot: [Math.PI / 2, 0, 0], on: hid, color: c.cap, layer: NEAR, pick: false }),
       d.add({ size: [0.38, 0.06, 0.06], pos: [0, -0.03, side > 0 ? 0.2 : -0.21], on: hid, color: c.chassis, layer: NEAR, pick: false }),
-      // The suspension arm, from the tub out to the wheel (on the car: it does not steer).
-      d.add({ size: [0.09, 0.05, i < 2 ? 0.2 : 0.26], pos: [i < 2 ? 0.8 : -0.74, -0.27, side * 0.53], on: id, color: c.cage, layer: NEAR, pick: false }),
     ]);
+    // The suspension arm (on the car: it does not steer), from a pivot under the tub out to the hub; it
+    // swings with the wheel's travel (`poseArm`) and takes the arm's layer (parts' last).
+    const aid = id + "a" + i, arm = d.add({ id: aid, shape: "group", size: [0.2, 0, 0.2], pos: [wheels[i * 2]!, ARM_Y, side * ARM_IN], on: id, layer: BODY });
+    parts[i]!.push(d.add({ size: [0.16, 0.05, ARM_L], pos: [0, 0, side * ARM_L * 0.5], on: aid, color: c.cage, layer: NEAR, pick: false }));
+    arms.push(arm);
     hubs.push(hub);
   }
-  return { root, tails, hubs, parts };
+  return { root, tails, hubs, parts, arms };
 }
 
 /** True when the hub's place (its `pos` x, z) across the car (its own frame, at any height) is on the far side of
@@ -94,4 +101,11 @@ export function wheelLayers(d: Diorama, b: Buggy) {
     const ps = b.parts[i]!, L = farSide(d, b.root, b.hubs[i]!) ? LF : LN;
     for (let j = 0; j < ps.length; j++) ps[j]!.layer = L[j]!;
   }
+}
+
+/** Swing wheel i's arm from its pivot down to its hub (set the hub's `pos` first): an angle about the
+ *  car's length. Objects in, nothing out (allocates nothing). */
+export function poseArm(b: Buggy, i: number) {
+  const h = b.hubs[i]!, side = h.pos[2]! > 0 ? 1 : -1;
+  b.arms[i]!.rot[0] = side * Math.atan2(h.pos[1]! - ARM_Y, Math.abs(h.pos[2]!) - ARM_IN);
 }

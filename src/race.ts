@@ -61,8 +61,16 @@ export const IK = 6;
 const STALL_T = 0.95, STALL_KEEP = 0.42;
 
 export const CAR_OPTS = {
-  kind: "car" as const, wheels: [0.8, -0.78, 0.8, 0.78, -0.74, -0.76, -0.74, 0.76], radius: 0.36, rest: 0.34, travel: 0.3,
-  accel: 9, top: 12, grip: 1.08, drift: 0.2, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05, hz: 2.1, damping: 0.7,
+  kind: "car" as const, wheels: [0.8, -0.78, 0.8, 0.78, -0.74, -0.76, -0.74, 0.76], radius: 0.36,
+  // Long-travel suspension (a desert buggy): soft, progressive springs with a long stroke, more rebound than
+  // compression damping (big landings soak in and settle, no pogo), a body that pitches and rolls on them
+  // (a little less roll inertia and a lower centre of mass than pitch, so a slide onto a bank stays upright).
+  rest: 0.6, travel: 0.55, stiffness: 80, progressive: 3, damping: 0.6, rebound: 1, inertia: [1.4, 0.7], cg: 0.3, droop: 3.5,
+  accel: 9, top: 12, grip: 1.08, drift: 0.2, steer: 0.62, steerFall: 13, airPitch: 6, crashPitch: 0.72, crashRoll: 1.05,
+  // The handbrake (the brick's drift input): the tail swings out, the slide holds under 0.62 rad, a little speed back on the way out.
+  swing: 1, slide: 0.62, recover: 0.25,
+  // Contact (the brick's touch): a box hull.
+  mass: 1, hull: [1.25, 0.72],
   surfaces: [0.92, 1.08, 1.08],
 };
 

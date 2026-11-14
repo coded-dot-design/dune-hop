@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Long-travel suspension, like a desert buggy or a trophy truck: each wheel rides its own soft,
+  progressive spring with 0.55 of travel (was 0.3) and more rebound than compression damping, on a
+  swinging arm you can see (it swings from under the tub to the hub as the spring works, on the
+  arm's layer); the whoops work the wheels one by one, the body pitches and rolls on the springs (a
+  lower centre of mass and lighter roll than pitch, so a slide onto a bank stays upright), and a big
+  landing sinks deep, rebounds once and settles. Measured over the autopilot's races (four tracks, two
+  seeds): 214 landings, 16 on the bump stop (0.3.0's springs: 193 of 205), the median landing uses
+  0.91 of the travel. A tumble that rights itself drops the buggy onto its springs.
+- On `@fzlt/core` 0.24.0: drift, car contact and suspension are the `drive` brick's (`src/handling.ts`
+  is now a thin view of them for the race). The handbrake is the brick's: the tail swings out, the
+  slide holds under 0.62 rad and a little speed comes back on the way out. Cars collide as boxes.
+- Fizlet 0.24.0 also fixes the allocation 0.23.0's drive made with several races in one process
+  (the race test: 1 to 3 young GCs over 200,000 steps).
 - The rest of each wheel now sits behind the body on the far side too: the hub caps, the axle stubs
   and the suspension arms (0.3.0 fixed the tyres only; the arms sat on the body's layer and the caps
   could float over a side pod). One rule: everything on a wheel goes over the body on the near side

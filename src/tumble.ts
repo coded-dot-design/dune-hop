@@ -85,6 +85,9 @@ export function tumbler(o: {
     }
     const v = cars[c]!;
     v.reset(pos[p]!, pos[p + 2]!, rot[p + 1]!);
+    // It comes down onto its wheels: a short drop the long-travel springs soak up (too short to judge a landing).
+    v.pos[1] = v.pos[1]! + 0.3;
+    v.vel[1] = -1.5;
     v.vel[0] = TV[T]! * 0.8;
     v.vel[2] = TV[T + 2]! * 0.8;
     pos.set(v.pos, p);
