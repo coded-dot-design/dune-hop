@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1
+
+- The camera holds still ("it keeps zooming on him"). Your buggy is drawn the same size all race:
+  the chase's look-ahead leads across the picture only, and the camera slides with the buggy along
+  the line of sight instead of zooming as it speeds up, brakes, jumps and lands. A resize (the phone's
+  URL bar showing or hiding, a quality step) no longer refits or snaps the camera: the scale set when
+  the race begins holds (more or less of the course shows); only a width change reframes, after
+  0.4 s, eased. The table view holds the same way. Measured over a whole race at 390 × 844 with the
+  URL bar shown and hidden eight times: the chase scale swings 4.8% (0.4.0: 38%); at 1440 × 900,
+  6.1% (0.4.0: 24%).
+- No browser zoom on the play surface: a pinch on a HUD key or the pad zoomed the page (4.5× and 5×);
+  now `touch-action` on the stage and `@fzlt/core/touch`'s lock (iOS's gesture events too) stop it,
+  on the stage alone. `tests/camera.mjs` checks both; the README's "Camera" has the rule (#19).
+- The build: 87,396 bytes gzip (+619), budget 88,000.
+
 ## 0.4.0
 
 - Long-travel suspension, like a desert buggy or a trophy truck: each wheel rides its own soft,
