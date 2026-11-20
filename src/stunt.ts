@@ -1,4 +1,4 @@
-// Dune Hop's air scorer: airtime in, points out, with a combo for clean landings. Small and general on
+// Dune Rally's air scorer: airtime in, points out, with a combo for clean landings. Small and general on
 // purpose (a brick candidate for any vehicle or rider game that judges its landings): it knows
 // nothing about the vehicle, only how long it was in the air and how far off the slope it came
 // down. Call `land(air, err)` once per landing, `crash()` when it goes wrong, `reset()` for a new run.

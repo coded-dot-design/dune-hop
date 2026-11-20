@@ -1,10 +1,10 @@
 // After `astro build`: check every local link in the built site resolves (artifacts/pages is exactly
-// what GitHub Pages serves: / the landing page, /play/ the game).
+// what Cloudflare Pages serves: / the landing page, /play/ the game).
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 const out = resolve("artifacts/pages");
 if (!existsSync(join(out, "index.html"))) throw Error("Run astro build first (npm run site:build).");
-const BASE = `${(process.env.SITE_BASE || "/dune-hop").replace(/\/$/, "")}/`;
+const BASE = `${(process.env.SITE_BASE || "/").replace(/\/$/, "")}/`;
 const pages = [];
 const walk = (dir) => readdirSync(dir).forEach((n) => { const f = join(dir, n); statSync(f).isDirectory() ? walk(f) : f.endsWith(".html") && pages.push(f); });
 walk(out);
@@ -19,4 +19,4 @@ for (const page of pages)
     if (!existsSync(file)) missing.push(`${page.slice(out.length)}: ${url}`);
   }
 if (missing.length) throw Error(`Broken links:\n${missing.join("\n")}`);
-console.log(`Pages ready: ${pages.length} pages (/ and /play/), Dune Hop ${JSON.parse(readFileSync("package.json", "utf8")).version}.`);
+console.log(`Pages ready: ${pages.length} pages (/ and /play/), Dune Rally ${JSON.parse(readFileSync("package.json", "utf8")).version}.`);

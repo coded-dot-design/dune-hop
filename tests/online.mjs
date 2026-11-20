@@ -1,4 +1,4 @@
-// Dune Hop online in Chromium (the built dist/dune-hop.mjs): four pages, one race, through the game's
+// Dune Rally online in Chromium (the built dist/dune-hop.mjs): four pages, one race, through the game's
 // own menu and room card and @fzlt/core/presence's join() against a stand-in fizlet-rooms server
 // (tests/room-server.mjs). Two desktops (1440) and two phones (390, touch). The host picks the track
 // and one lap, presses HOST and 4; its SEND LINK (no share sheet here: the copy fallback) drops a phone
@@ -223,7 +223,7 @@ try {
   await until(E, (sr) => /left the match/.test(eval(sr).querySelector(".dh-gone-say").textContent), sr, "E hears F left", 20000);
   console.log("✓ a room of three started early (START NOW): a Freestyle jam for two; one leaves, the other is told");
   assert.deepEqual(errors, [], "no page errors");
-  console.log(`Dune Hop online (four players): green in ${ms()}`);
+  console.log(`Dune Rally online (four players): green in ${ms()}`);
 } finally {
   await browser.close();
   rooms.close();

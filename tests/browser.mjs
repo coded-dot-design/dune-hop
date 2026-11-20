@@ -1,4 +1,4 @@
-// Dune Hop in Chromium (the built dist/dune-hop.mjs), at 1440 (keyboard and mouse) and 390 (touch):
+// Dune Rally in Chromium (the built dist/dune-hop.mjs), at 1440 (keyboard and mouse) and 390 (touch):
 // it mounts in the page's board with the track menu (every key 44 px or more) and the race drawn
 // on the canvas; a track key starts the countdown, then GO; the keyboard (↑) and the mouse (hold on
 // the course) drive on a desktop, the stick on a phone; P pauses (the clock holds) and
@@ -323,7 +323,7 @@ try {
     assert.equal(await p.evaluate(() => game.engine.stats().frames), f0, "drop-in: no frames after Recall");
     await ctx.close();
   }
-  console.log("Dune Hop: menu (select, then START), countdown, keyboard, mouse, the stick alone driving through gates and the STEERING swap (stick, arrows; remembered, migrated), pause/resume, a full race to the result and a track best, Freestyle (a table-to-table jump, settles), split screen (each person's keys side by side; on a phone behind its flag, a stick each), 2 · SPLIT on desktop only, reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
+  console.log("Dune Rally: menu (select, then START), countdown, keyboard, mouse, the stick alone driving through gates and the STEERING swap (stick, arrows; remembered, migrated), pause/resume, a full race to the result and a track best, Freestyle (a table-to-table jump, settles), split screen (each person's keys side by side; on a phone behind its flag, a stick each), 2 · SPLIT on desktop only, reduced motion, the attract lap and its takeover, Recall byte for byte; at 1440 and 390.");
 } finally {
   await browser.close();
   await server.close();

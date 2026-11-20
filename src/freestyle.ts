@@ -1,4 +1,4 @@
-// Dune Hop's Freestyle, headless (tests/freestyle.test.mjs plays it with no browser): one to four
+// Dune Rally's Freestyle, headless (tests/freestyle.test.mjs plays it with no browser): one to four
 // buggies loose on the park (./park.ts), no race and no clock for one; more people get a timed jam.
 // Points: air (the airtime, judged on the landing like the race's air scorer: clean or sketchy), a
 // transfer bonus for landing on another table, drift chains (a handbrake slide banked when it ends,

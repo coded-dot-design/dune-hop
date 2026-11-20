@@ -1,4 +1,4 @@
-// Dune Hop BATTLE and King of the Table in Chromium (the built dist/dune-hop.mjs), at 1440 (keyboard)
+// Dune Rally BATTLE and King of the Table in Chromium (the built dist/dune-hop.mjs), at 1440 (keyboard)
 // and 390 (touch): the menu's CLEAN / BATTLE (remembered across a reload); boxes on the track; driving
 // through one gives an item (the HUD chip names it); F (or the pad's ★ key) fires it: a blaster's bolt
 // stalls the rival in front, oil dropped behind spins out the rival that runs over it, a shield blocks
@@ -134,7 +134,7 @@ try {
     assert.deepEqual(errs, [], `king ${name}: no page errors`);
     await ctx.close();
   }
-  console.log("Dune Hop BATTLE: CLEAN / BATTLE remembered, a box gives an item, F and the pad's ★ fire it, a bolt stalls and oil spins a rival, a shield blocks one, a mine's tumble rights itself; King of the Table steals and banks; at 1440 and 390.");
+  console.log("Dune Rally BATTLE: CLEAN / BATTLE remembered, a box gives an item, F and the pad's ★ fire it, a bolt stalls and oil spins a rival, a shield blocks one, a mine's tumble rights itself; King of the Table steals and banks; at 1440 and 390.");
 } finally {
   await browser.close();
   await server.close();

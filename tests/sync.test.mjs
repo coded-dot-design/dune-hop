@@ -1,4 +1,4 @@
-// Dune Hop online, headless: the sync gate. Copies of the sim fed the same input stream (each seat's
+// Dune Rally online, headless: the sync gate. Copies of the sim fed the same input stream (each seat's
 // inputs packed to 32 bits and unpacked again, as the wire carries them) stay identical, byte for
 // byte, for a whole race with rivals, a BATTLE race and a Freestyle jam, with two seats and with four;
 // one wrong input shows up in the state hash (the desync check). Every sim restores exactly from its
@@ -268,7 +268,7 @@ test("four seats with rollback allocate (almost) nothing (20,000 ticks × 4 scre
   await new Promise((ok) => setTimeout(ok, 50));
   obs.disconnect();
   const resims = runs.map((r, i) => r.rb.resims - c0[i]);
-  console.log(`Dune Hop online: ${minor} young GCs over 20,000 ticks of four screens with rollback (${resims.join(" / ")} frames run again).`);
+  console.log(`Dune Rally online: ${minor} young GCs over 20,000 ticks of four screens with rollback (${resims.join(" / ")} frames run again).`);
   assert.ok(runs.every((r) => r.rb.desync < 0 && r.rb.final > 25000), "no desync");
   assert.ok(resims.every((n) => n > 20000), `corrections ran: ${resims}`);
   assert.ok(minor <= 8, `young GCs: ${minor}`);

@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { serve, launchOptions } from "./serve.mjs";
 
-const BASE = (process.env.SITE_BASE || "/dune-hop").replace(/\/$/, "");
+const BASE = (process.env.SITE_BASE || "/").replace(/\/$/, "");
 const server = await serve("artifacts/pages", {}, BASE);
 const browser = await chromium.launch(launchOptions());
 const SHOTS = process.env.SHOTS;
@@ -46,7 +46,7 @@ try {
       });
       assert.equal(m.theme, theme, `${at}: the theme`);
       assert.ok(m.drawn && m.hud, `${at}: the hero draws the race, no HUD over the copy`);
-      assert.equal(m.h1, "Dune Hop.Fly the dunes.", `${at}: the title and hook`);
+      assert.equal(m.h1, "Dune Rally.Fly the dunes.", `${at}: the title and hook`);
       assert.match(m.play, /\/play\/$/, `${at}: PLAY links to /play/`);
       assert.ok(m.playSize && m.sections && m.tracks === 4 && m.by, `${at}: PLAY ≥ 44 px, four sections, four tracks, by Chris Cooley`);
       assert.ok(m.size.includes(`${gz.toLocaleString("en-US")} bytes gzip`), `${at}: the measured size (${gz} B)`);
@@ -81,7 +81,7 @@ try {
   assert.deepEqual(await p.evaluate(() => ({ poster: !document.querySelector(".dh-poster").hidden, game: !!document.querySelector("[data-fizlet-host]") })), { poster: true, game: false }, "reduced motion: a still poster, no game");
   if (SHOTS) await p.screenshot({ path: `${SHOTS}/landing-reduced-motion.png` });
   await ctx.close();
-  console.log("Dune Hop site: the hero races (attract lap), the title, PLAY to /play/, four sections, the measured size, no sideways scroll, /play/ and ?track=, the reduced-motion poster; 1440 and 390, dark and light.");
+  console.log("Dune Rally site: the hero races (attract lap), the title, PLAY to /play/, four sections, the measured size, no sideways scroll, /play/ and ?track=, the reduced-motion poster; 1440 and 390, dark and light.");
 } finally {
   await browser.close();
   await server.close();

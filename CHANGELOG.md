@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **New home, new licence.** The game moves to the private repo `fizlet/dune-rally` and the address
+  `https://dunerally.fzlt.games` (the site's `SITE_URL` default and canonical; `SITE_BASE` defaults to `/`). Dune Hop is renamed **Dune Rally** (title, package name, README, site copy); saved settings keep their `dune-hop:` keys.
+  From this version the game is all rights reserved (`LICENSE`, `"license": "UNLICENSED"`).
+  Earlier versions were published under the MIT License and stay MIT for anyone who has a copy.
+  The Fizlet engine (`@fzlt/core`, now `fizlet/fzlt`) stays MIT.
+
 ## 0.4.1
 
 - The camera holds still ("it keeps zooming on him"). Your buggy is drawn the same size all race:

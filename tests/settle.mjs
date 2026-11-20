@@ -1,4 +1,4 @@
-// Dune Hop's settle guard (Chromium, dist/dune-hop.mjs): on the track menu the engine sleeps (no
+// Dune Rally's settle guard (Chromium, dist/dune-hop.mjs): on the track menu the engine sleeps (no
 // frames, no audio before a gesture); mid-race, with nobody touching anything, it never sleeps (the
 // rivals race and the clock keeps pace with the wall clock); scrolled off screen it pauses; the
 // attract lap ends after one lap and the hero sleeps; after Recall no frame runs. Waits on state.
@@ -42,7 +42,7 @@ try {
   await until(q, () => game.engine.paused.includes("settled"), null, "after its lap the hero settles", 90000);
   assert.equal(await frames(q), 0, "the hero sleeps");
   await q.close();
-  console.log("Dune Hop: settle guard green (the menu and the hero sleep, the race never does, off screen pauses, quiet after Recall).");
+  console.log("Dune Rally: settle guard green (the menu and the hero sleep, the race never does, off screen pauses, quiet after Recall).");
 } finally {
   await browser.close();
   await server.close();

@@ -1,4 +1,4 @@
-// The Dune Hop site on GitHub Pages: the landing page (/) and the game (/play/).
+// The Dune Rally site on Cloudflare Pages: the landing page (/) and the game (/play/).
 import { defineConfig } from "astro/config";
 import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -7,9 +7,9 @@ export default defineConfig({
   srcDir: root + "site/src",
   publicDir: root + "site/public",
   outDir: root + "artifacts/pages",
-  // Custom domain: SITE_URL=https://dunehop.domvirus.com and SITE_BASE=/ (pages.yml defaults).
-  site: process.env.SITE_URL || "https://coded-dot-design.github.io",
-  base: process.env.SITE_BASE || "/dune-hop",
+  // Custom domain: SITE_URL=https://dunerally.fzlt.games and SITE_BASE=/ (the defaults; cloudflare.yml sets them per target).
+  site: process.env.SITE_URL || "https://dunerally.fzlt.games",
+  base: process.env.SITE_BASE || "/",
   trailingSlash: "always",
   output: "static",
   devToolbar: { enabled: false },

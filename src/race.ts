@@ -1,4 +1,4 @@
-// Dune Hop's race, headless (tests/race.test.mjs plays it with no browser): N buggies on one track,
+// Dune Rally's race, headless (tests/race.test.mjs plays it with no browser): N buggies on one track,
 // each @fzlt/core/drive on the track's terrain. Cars 0..humans−1 are people (inputs per car in `IN`,
 // or the autopilot per car in `AUTO`); the rest are rivals driven by a waypoint AI (look ahead along
 // the line, steer at it, hold the speed the line allows, level the nose in the air; a seeded pace and,

@@ -1,4 +1,4 @@
-// Dune Hop's Freestyle, headless: the park builds the same every time; from every table's start,
+// Dune Rally's Freestyle, headless: the park builds the same every time; from every table's start,
 // straight on with the gas the car flies its out-ramp and lands on the next table (a transfer); the
 // autopilot rides the whole ring; clean landings build the combo multiplier; a handbrake slide banks
 // drift points; the gap swallows a car and its table takes it back; two people get a timed jam with a
@@ -126,6 +126,6 @@ test("a freestyle step allocates (almost) nothing (100,000 steps)", async () => 
   for (let i = 0; i < 100000; i++) f.step(1 / 60), f.clear();
   await new Promise((ok) => setTimeout(ok, 50));
   obs.disconnect();
-  console.log(`Dune Hop Freestyle: ${minor} young GCs over 100,000 steps.`);
+  console.log(`Dune Rally Freestyle: ${minor} young GCs over 100,000 steps.`);
   assert.ok(minor <= 6, `young GCs: ${minor}`);
 });
