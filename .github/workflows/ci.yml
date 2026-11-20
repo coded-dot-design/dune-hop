@@ -24,6 +24,6 @@ jobs:
       - run: npm run test:settle
       - run: npm run test:browser
       - run: npm run test:net
-      # The site (landing, /play/), built for dunerally.fzlt.games; pages.yml deploys it.
+      # The site (landing, /play/), built for dunerally.fzlt.games; cloudflare.yml deploys it.
       - run: npm run site:build
       - run: npm run test:site

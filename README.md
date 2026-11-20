@@ -197,10 +197,11 @@ session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 
-Custom domain: `pages.yml` builds with `SITE_URL=https://dunerally.fzlt.games` and `SITE_BASE=/`
-(repo variables override) and writes the `CNAME` from it. Online play uses `PUBLIC_ROOMS_URL`
+Hosting: Cloudflare Pages on `dunerally.fzlt.games` (`.github/workflows/cloudflare.yml`: a PR deploys a preview, `main`
+deploys staging on `dunerally-staging.fzlt.games` with `PUBLIC_DEPLOY_TARGET=staging`, noindex, and promoting a green
+`main` SHA deploys production; each build sets `SITE_URL` and `SITE_BASE=/`, no `CNAME` file). Online play uses `PUBLIC_ROOMS_URL`
 (default `wss://fizlet-rooms.fizlet.workers.dev`); the room server must list
-`https://dunerally.fzlt.games` in its allowed origins (`ALLOWED_ORIGINS`) and allow four seats
+`https://dunerally.fzlt.games` and `https://dunerally-staging.fzlt.games` in its allowed origins (`ALLOWED_ORIGINS`) and allow four seats
 (`MAX_PLAYERS`) for rooms of four.
 
 ## Licence
