@@ -66,6 +66,8 @@ const CITY: Pal = {
 };
 // FX pools: dust, sparks; the tail-light trails, per car.
 const DUST = 140, SPARK = 64, TRAIL = 30;
+/** Suspension arms: the pivot under the tub (height, distance in from the centre) and the arm's length out to the hub. */
+const ARM_Y = -0.27, ARM_IN = 0.28, ARM_L = 0.36;
 
 export interface DuneHopOptions {
   /** Mount inside this element (absolutely filled; give it a size). Default: a layer over the whole page. */
@@ -130,6 +132,8 @@ interface View {
   tv: TerrainView | null;
   cars: DioramaObject[];
   hubs: DioramaObject[][];
+  /** Per car, per wheel: the suspension arm's pivot (it swings as the spring works). */
+  arms: DioramaObject[][];
   tails: DioramaObject[][];
   gates: DioramaObject[][];
   dust: DioramaPoints | null;
@@ -251,7 +255,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     el.append(canvas, vh);
     viewsEl.append(el);
     const v: View = {
-      i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], tails: [], gates: [], dust: null, spark: null, sky: null,
+      i, el, canvas, d: null as unknown as Diorama, tv: null, cars: [], hubs: [], arms: [], tails: [], gates: [], dust: null, spark: null, sky: null,
       MB: new Float64Array(6), MAP: [],
       TABLE: { yaw: 0, pitch: 0.82, dist: 34, tx: 0, ty: 0, tz: 0.4, ox: 0, oy: 0, fov: 0.62 },
       chaseO: { dist: 13, pitch: 0.55, lift: 1.0, ahead: 0.26, rate: 3.4, turn: 2.8, side: 0, snap: false },
@@ -392,7 +396,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   function buildScene(v: View) {
     const d = v.d, t = sim.t, HX = sim.HX, HZ = sim.HZ, race = isRace() ? rc() : null;
     d.clear();
-    v.cars = []; v.hubs = []; v.tails = []; v.gates = [];
+    v.cars = []; v.hubs = []; v.arms = []; v.tails = []; v.gates = [];
     d.setLight(P.light, P.amb);
     d.cluster("sky", { fixed: -10 });
     d.cluster("table", { fixed: -5 });
@@ -499,8 +503,6 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     for (const z of [-0.42, 0.42]) part([0.86, 0.06, 0.22], [-0.2, 0.1, z], acc!);
     part([0.7, 0.24, 0.7], [0.76, -0.12, 0], body!, { shape: "wedge" });
     part([0.3, 0.05, 0.78], [1.04, -0.28, 0], acc!);
-    // Suspension arms out to each wheel.
-    for (const x of [0.8, -0.74]) for (const z of [-0.53, 0.53]) part([0.09, 0.05, x > 0 ? 0.2 : 0.26], [x, -0.27, z], P.cage);
     part([1.6, 0.04, 0.16], [0.02, 0.17, 0], acc!);
     part([0.44, 0.32, 0.6], [-0.86, -0.08, 0], P.chassis);
     for (const z of [-0.17, 0.17]) part([0.1, 0.28, 0.1], [-1.02, -0.02, z], P.hub, { shape: "cyl", sides: 6 });
@@ -515,9 +517,14 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     part([0.12, 0.09, 0.62], [0.16, 0.8, 0], P.lamp, { emissive: true });
     for (const z of [-0.28, 0.28]) part([0.04, 0.07, 0.16], [1.1, -0.1, z], P.lamp, { emissive: true });
     v.tails[k] = [part([0.05, 0.08, 0.16], [-1.09, 0.06, -0.24], P.tail, { emissive: true }), part([0.05, 0.08, 0.16], [-1.09, 0.06, 0.24], P.tail, { emissive: true })];
-    const car = sim.cars[k]!, hs: DioramaObject[] = [];
+    const car = sim.cars[k]!, hs: DioramaObject[] = [], as: DioramaObject[] = [];
     for (let i = 0; i < 4; i++) {
       const hid = id + "h" + i, side = car.wheels[i * 2 + 1]! > 0 ? 1 : -1;
+      // Long-travel arms: a pair of tubes from a pivot under the tub out to the hub, and a coil-over; they swing with the wheel.
+      const aid = id + "a" + i, arm = d.add({ id: aid, shape: "group", size: [0.2, 0, 0.2], pos: [car.wheels[i * 2]!, ARM_Y, side * ARM_IN], on: id });
+      for (const dx of [-0.07, 0.07]) d.add({ size: [0.05, 0.05, ARM_L], pos: [dx, 0, side * ARM_L * 0.5], on: aid, color: P.cage, pick: false });
+      d.add({ shape: "cyl", sides: 6, size: [0.09, 0.09, 0.09], pos: [0, 0, side * ARM_L], on: aid, color: acc!, pick: false });
+      as.push(arm);
       const hub = d.add({ id: hid, shape: "group", size: [0.6, 0, 0.6], on: id });
       d.add({ shape: "cyl", sides: 14, size: [0.74, 0.32, 0.74], pos: [0, 0, -0.16], rot: [Math.PI / 2, 0, 0], on: hid, color: P.tyre, pick: false });
       d.add({ shape: "cyl", sides: 8, size: [0.42, 0.05, 0.42], pos: [0, 0, side > 0 ? 0.16 : -0.21], rot: [Math.PI / 2, 0, 0], on: hid, color: k ? acc! : P.hub, pick: false });
@@ -525,6 +532,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
       hs.push(hub);
     }
     v.hubs[k] = hs;
+    v.arms[k] = as;
   }
 
   // ---- state ----
@@ -558,6 +566,9 @@ export function createDuneHop(o: DuneHopOptions = {}) {
         h.pos[0] = dv.wheels[i * 2]!;
         h.pos[1] = tum ? -0.2 : -(dv.rest - dv.comp[i]!);
         h.pos[2] = dv.wheels[i * 2 + 1]!;
+        // The arm swings down to the hub: an angle about the car's length (its x axis).
+        const side = dv.wheels[i * 2 + 1]! > 0 ? 1 : -1;
+        v.arms[k]![i]!.rot[0] = side * Math.atan2(h.pos[1]! - ARM_Y, Math.abs(dv.wheels[i * 2 + 1]!) - ARM_IN);
         h.rot[1] = i < 2 && !tum ? -Math.max(-0.45, Math.min(0.45, dv.steerAngle)) : 0;
         h.rot[2] = -dv.spin[i]!;
       }
