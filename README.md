@@ -1,15 +1,15 @@
-# Dune Hop
+# Dune Rally
 
 **Fly the dunes.** An off-road racer on a tabletop: four tracks, three rivals, every jump scored; a
 Freestyle park of four tables to jump between; two players on one screen or online. Neon contour
 dunes at night, a hot sunset by day.
 
-By [Chris Cooley](https://coded.design/) · built on [Fizlet](https://github.com/coded-dot-design/fizlet) · MIT
+By [Chris Cooley](https://coded.design/) · built on [Fizlet](https://github.com/fizlet/fzlt) · all rights reserved
 
-- **Play:** https://dunehop.domvirus.com/play/
-- **About:** https://dunehop.domvirus.com/
+- **Play:** https://dunerally.fzlt.games/play/
+- **About:** https://dunerally.fzlt.games/
 
-Dune Hop began as gallery piece #098 in Fizlet's Daily, a one-track tabletop run, and was picked to
+Dune Rally began as gallery piece #098 in Fizlet's Daily, a one-track tabletop run, and was picked to
 grow into a full game.
 
 ## The game
@@ -197,12 +197,13 @@ session), `src/stunt.ts` (the air scorer), `src/net.ts` (online: the wire format
 `src/game.ts` (the scene, the views, HUD and cards), `site/` (Astro: the landing page and the game page). CHROMIUM_PATH points the tests at a
 Chromium of your own.
 
-Custom domain: `pages.yml` builds with `SITE_URL=https://dunehop.domvirus.com` and `SITE_BASE=/`
+Custom domain: `pages.yml` builds with `SITE_URL=https://dunerally.fzlt.games` and `SITE_BASE=/`
 (repo variables override) and writes the `CNAME` from it. Online play uses `PUBLIC_ROOMS_URL`
 (default `wss://fizlet-rooms.fizlet.workers.dev`); the room server must list
-`https://dunehop.domvirus.com` in its allowed origins (`ALLOWED_ORIGINS`) and allow four seats
+`https://dunerally.fzlt.games` in its allowed origins (`ALLOWED_ORIGINS`) and allow four seats
 (`MAX_PLAYERS`) for rooms of four.
 
 ## Licence
 
-MIT © Chris Cooley / coded.design
+Copyright (c) Chris Cooley. All rights reserved ([LICENSE](LICENSE)). Versions published before this
+change were MIT and stay MIT for anyone who has a copy; the Fizlet engine (`@fzlt/core`) is MIT.

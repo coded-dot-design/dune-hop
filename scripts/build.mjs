@@ -15,10 +15,10 @@ const kit = await css(require.resolve("@fzlt/core/ui/board-ui.css")), game = awa
 const common = {
   define: { __KIT_CSS__: JSON.stringify(kit), __GAME_CSS__: JSON.stringify(game) },
   bundle: true, minify: true, target: "es2022", legalComments: "none", logLevel: "warning",
-  banner: { js: `/* Dune Hop ${version} · MIT © Chris Cooley · built on Fizlet ${core} */` },
+  banner: { js: `/* Dune Rally ${version} · © Chris Cooley, all rights reserved · built on Fizlet ${core} */` },
 };
 await build({ ...common, entryPoints: ["src/index.ts"], format: "esm", outfile: "dist/dune-hop.mjs" });
 await build({ ...common, entryPoints: ["src/index.ts"], format: "iife", globalName: "duneHop", outfile: "dist/dune-hop.js" });
 const size = (f) => gzipSync(readFileSync(f)).length;
 writeFileSync("dist/build.json", JSON.stringify({ version, fizlet: core, gzip: { "dune-hop.mjs": size("dist/dune-hop.mjs"), "dune-hop.js": size("dist/dune-hop.js") } }, null, 2) + "\n");
-console.log(`Built Dune Hop ${version} on @fzlt/core ${core}: dist/dune-hop.mjs, dist/dune-hop.js`);
+console.log(`Built Dune Rally ${version} on @fzlt/core ${core}: dist/dune-hop.mjs, dist/dune-hop.js`);

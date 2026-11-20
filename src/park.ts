@@ -1,4 +1,4 @@
-// Dune Hop's Freestyle park: four large tables side by side (two by two) over a dark gap, each its own
+// Dune Rally's Freestyle park: four large tables side by side (two by two) over a dark gap, each its own
 // look and features, linked by launch ramps: a kicker on each side of every gap, facing the other,
 // so a car off one lands on the other's slope (and the other way round). The ring round the park is
 // 0 → 1 → 3 → 2 → 0 (each table's out-ramp is one of its two links); every table spawns its car at its

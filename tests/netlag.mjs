@@ -1,4 +1,4 @@
-// Dune Hop online on a phone's network, measured (node tests/netlag.mjs [--net lockstep|rollback]
+// Dune Rally online on a phone's network, measured (node tests/netlag.mjs [--net lockstep|rollback]
 // [--seconds 30] [--json]): two and four screens race over the stand-in room server
 // (tests/room-server.mjs) with its latency shim (60–150 ms round trips, ± 20–40 ms jitter, a 300 ms
 // spike every few seconds), each screen an engine on a real 60 Hz clock. Per screen:
@@ -132,7 +132,7 @@ for (const [P, room] of [[2, 3], [4, 5]]) results.push(await match(P, room));
 if (JSON_OUT) console.log(JSON.stringify({ kind: KIND, seconds: SECONDS, lag: LAG, results }, null, 1));
 else
   for (const r of results) {
-    console.log(`Dune Hop online, ${KIND}, ${r.P} screens, ${SECONDS} s on phone links (RTT ${LAG.rtt.slice(0, r.P).join("/")} ms ± ${LAG.jitter}, ${LAG.spike} ms spikes):`);
+    console.log(`Dune Rally online, ${KIND}, ${r.P} screens, ${SECONDS} s on phone links (RTT ${LAG.rtt.slice(0, r.P).join("/")} ms ± ${LAG.jitter}, ${LAG.spike} ms spikes):`);
     console.table(r.screens);
     if (r.same !== null) console.log(`  every screen's confirmed race identical, byte for byte: ${r.same}`);
   }

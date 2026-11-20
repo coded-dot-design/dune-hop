@@ -1,4 +1,4 @@
-// Dune Hop online: two to four screens, one race (or one jam), over a fizlet-rooms room
+// Dune Rally online: two to four screens, one race (or one jam), over a fizlet-rooms room
 // (@fzlt/core/presence's `join` for the room and its lobby, the same room server Salvo Bay and
 // Battlefield Blitz use). The sim is deterministic, so only inputs travel: each frame every seat's
 // inputs packed in 32 bits. ./rollback.ts runs each frame at once with this screen's own input (1 to 3

@@ -1,10 +1,10 @@
 ---
-// Dune Hop, the landing page. The hero is the game itself: an attract lap of Neon Edge in the chase
+// Dune Rally, the landing page. The hero is the game itself: an attract lap of Neon Edge in the chase
 // view (tap to take the wheel); reduced motion shows a still poster that links to /play/.
 import Base from '../layouts/Base.astro';
 import { base, GZIP, FIZLET, REPO } from '../site';
 import { TRACKS } from '../../../src/tracks.ts';
-const description = 'Dune Hop is a cyberpunk-desert off-road racer on a tabletop: four tracks, three rivals, a Freestyle park of four tables to jump between, two players on one screen or online, jumps scored for airtime and clean landings. Free in the browser, by Chris Cooley, built on Fizlet.';
+const description = 'Dune Rally is a cyberpunk-desert off-road racer on a tabletop: four tracks, three rivals, a Freestyle park of four tables to jump between, two players on one screen or online, jumps scored for airtime and clean landings. Free in the browser, by Chris Cooley, built on Fizlet.';
 const kb = (GZIP / 1024).toFixed(1);
 const steps = [
   ['GAS & STEER', 'Hold ↑ (or W) for gas, ← → to steer, ↓ to brake. On a phone the stick steers and gives the gas (push up; pull down to brake), with DRIFT, BRAKE and BOOST under the right thumb, so you can hold the gas and drift at once. A mouse? Hold the course for gas, drag to steer.'],
@@ -28,13 +28,13 @@ const features = [
 ];
 const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound', 'fx', 'ui', 'presence'];
 ---
-<Base title="Dune Hop · an off-road racer on a tabletop" description={description}>
+<Base title="Dune Rally · an off-road racer on a tabletop" description={description}>
   <section class="dh-hero" aria-labelledby="dh-title">
-    <div class="dh-stage" id="dh-hero" aria-label="Dune Hop demo lap: tap to take the wheel"></div>
-    <a class="dh-poster" href={base('play/')} hidden><img src={base('shots/hero.jpg')} alt="Dune Hop: four buggies racing at night through neon-lit dunes at the edge of a city" width="1600" height="900" /></a>
+    <div class="dh-stage" id="dh-hero" aria-label="Dune Rally demo lap: tap to take the wheel"></div>
+    <a class="dh-poster" href={base('play/')} hidden><img src={base('shots/hero.jpg')} alt="Dune Rally: four buggies racing at night through neon-lit dunes at the edge of a city" width="1600" height="900" /></a>
     <div class="wrap dh-copy">
       <p class="eyebrow"><span class="dot"></span> A DOM VIRUS GAME · BY CHRIS COOLEY</p>
-      <h1 id="dh-title">Dune Hop.<br /><em>Fly the dunes.</em></h1>
+      <h1 id="dh-title">Dune Rally.<br /><em>Fly the dunes.</em></h1>
       <p class="lead">An off-road racer on a tabletop. Four tracks, three rivals, every jump scored. A Freestyle park to fly between tables. Two players on one screen, or online. Neon at night, a hot sunset by day.</p>
       <div class="dh-ctas">
         <a class="bui-key bui-sticker-key bui-call start-key" href={base('play/')}><b>PLAY</b><span>free · in your browser</span></a>
@@ -86,16 +86,16 @@ const bricks = ['kernel', 'diorama', 'terrain', 'drive', 'input', 'pad', 'sound'
       <div>
         <p class="eyebrow"><span class="index">04</span> BUILT ON FIZLET</p>
         <h2>No libraries. {kb} KB.</h2>
-        <p>Dune Hop is built on <a href="https://fizlet.com/">Fizlet</a>, the micro animation and game engine for the DOM, and nothing else: no framework, no 3D library, no images in the game. The dunes, the buggies and the light trails are drawn by Fizlet's bricks on one canvas.</p>
+        <p>Dune Rally is built on <a href="https://fizlet.com/">Fizlet</a>, the micro animation and game engine for the DOM, and nothing else: no framework, no 3D library, no images in the game. The dunes, the buggies and the light trails are drawn by Fizlet's bricks on one canvas.</p>
         <p>The whole game, its Fizlet bricks and its Board UI styles: <b>{GZIP.toLocaleString('en-US')} bytes gzip</b> (measured at build, Fizlet {FIZLET}).</p>
         <ul class="bricks">{bricks.map((b) => <li><code>@fzlt/core/{b}</code></li>)}</ul>
       </div>
       <div class="panel lit by">
         <p class="eyebrow"><b>BY CHRIS COOLEY</b></p>
         <h3>It started as a tiny game.</h3>
-        <p>Dune Hop began as gallery piece #098 in Fizlet's Daily: one short loop and a buggy. It was picked to grow into a full game.</p>
-        <p><a href="https://coded.design/">coded.design</a> · <a href={REPO}>Source on GitHub (MIT)</a></p>
-        <a class="bui-key bui-arcade bui-go" href={base('play/')}>▶ Play Dune Hop</a>
+        <p>Dune Rally began as gallery piece #098 in Fizlet's Daily: one short loop and a buggy. It was picked to grow into a full game.</p>
+        <p><a href="https://coded.design/">coded.design</a> · <a href={REPO}>Source on GitHub</a></p>
+        <a class="bui-key bui-arcade bui-go" href={base('play/')}>▶ Play Dune Rally</a>
       </div>
     </div>
   </section>

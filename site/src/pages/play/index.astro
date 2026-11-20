@@ -1,11 +1,11 @@
 ---
-// Dune Hop, the game: the stage fills the screen under the header. ?track=<id> races that track at once;
+// Dune Rally, the game: the stage fills the screen under the header. ?track=<id> races that track at once;
 // ?mode=online&room=N&code=… opens the online room card (the code is taken out of the address bar first).
 import Base from '../../layouts/Base.astro';
 import { ROOMS } from '../../site';
-const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks and three rivals, a Freestyle park of four tables to jump between, two players on one screen or online.';
+const description = 'Play Dune Rally: an off-road racer on a tabletop. Four tracks and three rivals, a Freestyle park of four tables to jump between, two players on one screen or online.';
 ---
-<Base title="Play Dune Hop" description={description} page="play" app>
+<Base title="Play Dune Rally" description={description} page="play" app>
   <Fragment slot="head">
     <!-- An invite code in a link (?code=) is taken out of the address bar before anything else loads. -->
     <meta name="referrer" content="no-referrer" />
@@ -20,7 +20,7 @@ const description = 'Play Dune Hop: an off-road racer on a tabletop. Four tracks
     </script>
   </Fragment>
   <section class="play-stage" aria-labelledby="play-title">
-    <h1 id="play-title" class="sr">Play Dune Hop</h1>
+    <h1 id="play-title" class="sr">Play Dune Rally</h1>
     <div id="game" class="play-host" data-rooms={ROOMS}></div>
   </section>
 </Base>

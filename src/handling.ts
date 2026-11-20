@@ -1,4 +1,4 @@
-// Dune Hop's handling on @fzlt/core/drive (0.24): the brick does the handbrake drift (the drift input,
+// Dune Rally's handling on @fzlt/core/drive (0.24): the brick does the handbrake drift (the drift input,
 // `input[3]`: the rear lets go, the tail swings out, the slide is held and caught) and the contact
 // (`touch`: box hulls pushed apart, bounced along the normal); this file keeps the race's view of them.
 // The race calls `drift(c)` after each car's step and `contact(on, onHit)` once per step.

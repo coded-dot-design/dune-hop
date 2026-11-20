@@ -1,4 +1,4 @@
-// Dune Hop BATTLE and the tumble, headless: no landing ever ends a run (every tumble comes down on its
+// Dune Rally BATTLE and the tumble, headless: no landing ever ends a run (every tumble comes down on its
 // wheels where it landed; only a car over the table's edge goes back to its gate); boxes give items
 // and come back; every hit type (a bolt's stall, oil's spin-out, a mine's big tumble) recovers; a
 // shield blocks one; the AI picks up and fires; the same seed and inputs give the same battle (items
@@ -214,6 +214,6 @@ test("a battle race step allocates (almost) nothing (100,000 steps, six cars fir
   for (let i = 0; i < 100000; i++) { r.step(1 / 60); r.clear(); if (r.R[0] === DONE && r.R[6] > 25) r.reset(5 + (i & 7)); }
   await new Promise((ok) => setTimeout(ok, 50));
   obs.disconnect();
-  console.log(`Dune Hop BATTLE: ${minor} young GCs over 100,000 race steps.`);
+  console.log(`Dune Rally BATTLE: ${minor} young GCs over 100,000 race steps.`);
   assert.ok(minor <= 8, `young GCs: ${minor}`);
 });

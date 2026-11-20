@@ -1,4 +1,4 @@
-/* Dune Hop: the stage inside the game's shadow root (a Board UI root, .bui). The race draws on the
+/* Dune Rally: the stage inside the game's shadow root (a Board UI root, .bui). The race draws on the
    canvas; over it a transparent key takes the pointer (hold for gas, drag to steer) and the keyboard's
    focus. Board UI stickers: position, lap, clock, stunt score and nitro on top; the standings and the
    keys on the right; calls in the middle; the track menu, pause and results cards. The touch keys are

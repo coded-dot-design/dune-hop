@@ -1,4 +1,4 @@
-// Dune Hop's race, headless: the tracks build the same every time (bit for bit), every gate stands on
+// Dune Rally's race, headless: the tracks build the same every time (bit for bit), every gate stands on
 // the track, each track is bigger than the one before; the autopilot races every track to the flag
 // with all four buggies finishing, gates in order; the countdown holds the grid; a nose-down landing
 // crashes and respawns at the last gate; boost pads push; the same seed and inputs give the same race
@@ -171,6 +171,6 @@ test("a race step allocates (almost) nothing (200,000 steps)", async () => {
   for (let i = 0; i < 200000; i++) { r.step(1 / 60); r.clear(); if (r.R[0] === DONE && r.R[6] > 25) r.reset(5 + (i & 7)); }
   await new Promise((ok) => setTimeout(ok, 50));
   obs.disconnect();
-  console.log(`Dune Hop: ${minor} young GCs over 200,000 race steps.`);
+  console.log(`Dune Rally: ${minor} young GCs over 200,000 race steps.`);
   assert.ok(minor <= 8, `young GCs: ${minor}`);
 });

@@ -1,4 +1,4 @@
-// Dune Hop's BATTLE items, headless (the race and Freestyle both carry one): item boxes on the track
+// Dune Rally's BATTLE items, headless (the race and Freestyle both carry one): item boxes on the track
 // that come back a few seconds after they're taken, one item held per car, fired with the ITEM input.
 // Our own four:
 // - BLASTER: a short burst of three bolts straight ahead; a bolt that hits stalls the car (a jolt, half

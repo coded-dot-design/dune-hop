@@ -1,4 +1,4 @@
-// Dune Hop's tumble, shared by the race and Freestyle: no one ever crashes out. A bad landing, a
+// Dune Rally's tumble, shared by the race and Freestyle: no one ever crashes out. A bad landing, a
 // rollover or a mine throws the buggy into a short roll (up, spinning, bouncing on the ground); for
 // the last part of it the body rights itself, and it comes down on its wheels where it is, still
 // rolling the way it was going. Only a buggy that leaves the table (over the edge, into a gap) goes

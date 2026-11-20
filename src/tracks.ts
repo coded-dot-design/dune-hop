@@ -1,4 +1,4 @@
-// Dune Hop's tracks: four tabletop courses of rising size and complexity, and the builder that turns
+// Dune Rally's tracks: four tabletop courses of rising size and complexity, and the builder that turns
 // one into terrain. A track is data: a closed centre line from a few control points (a Catmull-Rom
 // loop, resampled to even steps), optional shortcut branches that leave the loop and rejoin it, an
 // elevation profile along the line, and features placed by how far round the lap they sit (0..1):

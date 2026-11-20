@@ -1,4 +1,4 @@
-name: Deploy Dune Hop site
+name: Deploy Dune Rally site
 on:
   push:
     branches: [main]
@@ -28,7 +28,7 @@ jobs:
       - run: npm run site:build
         env:
           # Custom domain (defaults here; repo variables override).
-          SITE_URL: ${{ vars.SITE_URL || 'https://dunehop.domvirus.com' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://dunerally.fzlt.games' }}
           SITE_BASE: ${{ vars.SITE_BASE || '/' }}
           # The fizlet-rooms server for online play (a repo variable; site.ts has the default).
           PUBLIC_ROOMS_URL: ${{ vars.ROOMS_URL }}
@@ -36,7 +36,7 @@ jobs:
       - name: CNAME for the custom domain
         run: node -e 'console.log(new URL(process.env.SITE_URL).host)' > artifacts/pages/CNAME && cat artifacts/pages/CNAME
         env:
-          SITE_URL: ${{ vars.SITE_URL || 'https://dunehop.domvirus.com' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://dunerally.fzlt.games' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: artifacts/pages

@@ -1,4 +1,4 @@
-// Dune Hop, the scene: a race (./race.ts) or the Freestyle park (./freestyle.ts) drawn as a tabletop
+// Dune Rally, the scene: a race (./race.ts) or the Freestyle park (./freestyle.ts) drawn as a tabletop
 // diorama. A slab of ridged dunes on a plinth: at night the crests glow in neon contour lines over
 // violet sand under a striped sun; by day it is a hot sunset; Neon Edge is always night, at the city's
 // edge, its towers lit. The buggies, the gates, boost pads with chevrons, the jump lips, light trails
@@ -200,7 +200,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   const play = document.createElement("button");
   play.type = "button";
   play.className = "dh-play";
-  play.setAttribute("aria-label", "Dune Hop: up or W for gas, down or S to brake, left and right to steer, Shift to drift, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T opens the menu");
+  play.setAttribute("aria-label", "Dune Rally: up or W for gas, down or S to brake, left and right to steer, Shift to drift, Space for nitro; in the air gas lifts the nose and brake dips it. P pauses, V changes the view, M mutes, R restarts, T opens the menu");
   const viewsEl = document.createElement("div");
   viewsEl.className = "dh-views";
   const hud = document.createElement("div");
@@ -211,7 +211,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
     `<ol class="dh-board" aria-label="Standings"></ol>` +
     `<p class="dh-keys"><button type="button" class="dh-key dh-k-tracks" aria-label="Menu (T)">MENU</button><button type="button" class="dh-key dh-k-view" aria-label="Camera view (V)">VIEW</button><button type="button" class="dh-key dh-k-mute" aria-label="Sound (M)" aria-pressed="true">♪</button><button type="button" class="dh-key dh-k-pause" aria-label="Pause (P)">❚❚</button></p>` +
     `<p class="dh-hint"></p><p class="dh-demo" hidden>DEMO LAP · TAP TO DRIVE</p><p class="dh-netchip" role="status" hidden><i></i><span></span></p><p class="dh-live" aria-live="polite"></p>` +
-    `<div class="dh-card dh-menu" role="dialog" aria-label="Dune Hop menu" hidden><b>DUNE HOP</b>` +
+    `<div class="dh-card dh-menu" role="dialog" aria-label="Dune Rally menu" hidden><b>DUNE RALLY</b>` +
     segRow("mode", "Mode", [["race", "RACE"], ["free", "FREESTYLE"]]) +
     segRow("players", "Players", [["1", "1 PLAYER"], ["2", "2 · SPLIT"], ["net", "ONLINE"]]) +
     segRow("set", "Race setting", [["clean", "CLEAN"], ["battle", "BATTLE · ITEMS"]]) +
@@ -2045,7 +2045,7 @@ export function createDuneHop(o: DuneHopOptions = {}) {
   $(".dh-share").addEventListener("click", async () => {
     const url = `${location.origin}${location.pathname}?mode=online&room=${net.room}${qs.get("rooms") ? `&rooms=${encodeURIComponent(ROOMS_URL)}` : ""}${net.code ? `&code=${encodeURIComponent(net.code)}` : ""}`, k = $(".dh-share");
     try {
-      if (navigator.share) await navigator.share({ title: "Dune Hop · online", text: `Race me in Dune Hop: room ${net.room}.`, url });
+      if (navigator.share) await navigator.share({ title: "Dune Rally · online", text: `Race me in Dune Rally: room ${net.room}.`, url });
       else await navigator.clipboard.writeText(url), (k.textContent = "LINK COPIED");
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return;
